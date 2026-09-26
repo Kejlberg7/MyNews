@@ -12,9 +12,22 @@ const els = {
   emptyState: document.querySelector('#emptyState'), currentTopic: document.querySelector('#currentTopic'), pageTitle: document.querySelector('#pageTitle'),
   pageDescription: document.querySelector('#pageDescription'), sectionTitle: document.querySelector('#sectionTitle'), totalCount: document.querySelector('#totalCount'),
   lastUpdated: document.querySelector('#lastUpdated'), refreshButton: document.querySelector('#refreshButton'), sortSelect: document.querySelector('#sortSelect'),
-  toast: document.querySelector('#toast'), sidebar: document.querySelector('#sidebar'),
+  toast: document.querySelector('#toast'), sidebar: document.querySelector('#sidebar'), themeToggle: document.querySelector('#themeToggle'),
 };
 
+function applyTheme(theme, persist = true) {
+  document.documentElement.dataset.theme = theme;
+  const isDark = theme === 'dark';
+  els.themeToggle.querySelector('.theme-icon').textContent = isDark ? '☀' : '☾';
+  const label = isDark ? 'Skift til lyst tema' : 'Skift til mørkt tema';
+  els.themeToggle.setAttribute('aria-label', label);
+  els.themeToggle.title = label;
+  document.querySelector('meta[name="theme-color"]').content = isDark ? '#131815' : '#f6f5f0';
+  if (persist) localStorage.setItem('interessefeed:theme', theme);
+}
+function toggleTheme() {
+  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+}
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 }
@@ -123,6 +136,8 @@ document.querySelectorAll('.navigation [data-topic]').forEach((button) => button
 renderTopics();
 document.querySelector('#todayLabel').textContent = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
 document.querySelector('#dateLine').textContent = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()).toUpperCase();
+applyTheme(document.documentElement.dataset.theme || 'light', false);
+els.themeToggle.addEventListener('click', toggleTheme);
 els.refreshButton.addEventListener('click', refresh);
 document.querySelector('#emptyRefresh').addEventListener('click', refresh);
 els.sortSelect.addEventListener('change', renderStories);
