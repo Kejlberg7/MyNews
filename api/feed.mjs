@@ -26,12 +26,12 @@ function tag(xml, name) {
 }
 function parseFeed(xml, topic) {
   const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
-  return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].map(([, item]) => {
+  return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].map(([, item], feedRank) => {
     const sourceMatch = item.match(/<source(?:\s+url="([^"]*)")?[^>]*>([\s\S]*?)<\/source>/i);
     const link = tag(item, 'link');
     const published = Date.parse(tag(item, 'pubDate'));
     const description = tag(item, 'description').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
-    return { title: tag(item, 'title'), link, source: sourceMatch ? decodeXml(sourceMatch[2].replace(/<[^>]+>/g, '').trim()) : 'Google News', sourceUrl: sourceMatch?.[1] ? decodeXml(sourceMatch[1]) : '', description, publishedAt: Number.isFinite(published) ? new Date(published).toISOString() : null, topicId: topic.id, topicLabel: topic.label };
+    return { title: tag(item, 'title'), link, source: sourceMatch ? decodeXml(sourceMatch[2].replace(/<[^>]+>/g, '').trim()) : 'Google News', sourceUrl: sourceMatch?.[1] ? decodeXml(sourceMatch[1]) : '', description, publishedAt: Number.isFinite(published) ? new Date(published).toISOString() : null, topicId: topic.id, topicLabel: topic.label, feedRank };
   }).filter((item) => item.title && /^https:\/\//i.test(item.link) && item.publishedAt && Date.parse(item.publishedAt) >= cutoff).slice(0, 50);
 }
 async function fetchTopic(topic) {
