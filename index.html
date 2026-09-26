@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="da">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f5f0" />
+    <title>Dit overblik — Interessefeed</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#" aria-label="Interessefeed, hjem">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>mellemrum<span class="brand-period">.</span></span>
+        </a>
+        <div class="sidebar-label">DIT OVERBLIK</div>
+        <nav class="navigation" aria-label="Feed-visning">
+          <button class="nav-item active" data-topic="all"><span class="nav-icon">▤</span><span>Alt nyt</span><span class="nav-count" id="totalCount">—</span></button>
+          <button class="nav-item" data-topic="saved"><span class="nav-icon">☆</span><span>Gemt til senere</span></button>
+        </nav>
+        <div class="sidebar-label topics-label">DINE EMNER <button class="add-topic" title="Emner kan tilpasses i denne prototype" aria-label="Emner kan tilpasses">＋</button></div>
+        <nav class="navigation topic-navigation" id="topicNavigation" aria-label="Dine interesser"></nav>
+        <div class="sidebar-note">
+          <div class="note-icon">✳</div>
+          <strong>Dit tempo. Dit valg.</strong>
+          <p>Ingen likes, anbefalingsspiraler eller uendeligt feed. Bare historier fra de emner, du selv har valgt.</p>
+        </div>
+        <div class="sidebar-footer"><span class="status-dot"></span> Samler åbne nyhedskilder <span class="footer-info" title="Artikler åbnes hos deres udgivere">ⓘ</span></div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <button class="mobile-menu" id="menuToggle" aria-label="Åbn emnemenu">☰</button>
+          <div class="breadcrumb"><span>Dit overblik</span><span class="breadcrumb-sep">/</span><strong id="currentTopic">Alt nyt</strong></div>
+          <div class="top-actions"><span class="today" id="todayLabel"></span><button class="refresh-button" id="refreshButton"><span class="refresh-icon">↻</span><span>Opdatér</span></button></div>
+        </header>
+
+        <section class="welcome">
+          <div class="welcome-copy"><div class="eyebrow" id="dateLine">DIT PERSONLIGE NYHEDSOVERBLIK</div><h1 id="pageTitle">Gør plads til<br /><em>det, du følger.</em></h1><p id="pageDescription">Nyt fra dine interesser, samlet ét sted. I rækkefølge efter tid — så du selv bestemmer, hvad der er vigtigt.</p></div>
+          <div class="welcome-art" aria-hidden="true"><div class="art-circle circle-one"></div><div class="art-circle circle-two"></div><div class="art-circle circle-three"></div><div class="art-sun"></div><div class="art-caption">MERE NYT,<br />MINDRE STØJ</div><div class="art-line"></div></div>
+        </section>
+
+        <section class="feed-heading">
+          <div><div class="feed-kicker"><span class="live-indicator"></span> LØBENDE OVERBLIK</div><h2 id="sectionTitle">Seneste historier</h2></div>
+          <div class="feed-tools"><label class="sort-label" for="sortSelect">Sortér</label><select id="sortSelect"><option value="newest">Nyeste først</option><option value="oldest">Ældste først</option></select></div>
+        </section>
+
+        <div class="feed-meta"><span id="feedStatus">Henter historier …</span><span id="lastUpdated"></span></div>
+        <section class="story-list" id="storyList" aria-live="polite"></section>
+        <div class="empty-state hidden" id="emptyState"><div class="empty-icon">✳</div><h3 id="emptyTitle">Her er roligt lige nu</h3><p id="emptyText">Der er ikke noget nyt at vise. Prøv igen lidt senere.</p><button class="text-button" id="emptyRefresh">Tjek igen <span>↻</span></button></div>
+        <footer class="page-footer"><span>Historier fra åbne nyhedskilder</span><span>·</span><span>Åbn artiklen hos udgiveren</span><span class="footer-right">Dit feed bliver på denne enhed</span></footer>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
