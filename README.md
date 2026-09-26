@@ -21,4 +21,4 @@ Feedets RSS-resultater caches i Neon i fem minutter, så gentagne besøg ikke he
 
 ## Emner
 
-Lokalt (Frederikssund), padel, tech og AI, biler og elbiler, gaming samt film og serier.
+Lokalt (Frederikssund), sport, fodbold, Premier League, Superligaen, Liverpool, FCK, padel, tech og AI, biler og elbiler, gaming samt film og serier.

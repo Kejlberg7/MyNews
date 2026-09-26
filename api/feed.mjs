@@ -2,6 +2,12 @@ import { neon } from '@neondatabase/serverless';
 
 const TOPICS = [
   { id: 'local', label: 'Lokalt', query: 'Frederikssund Denmark news -weather' },
+  { id: 'sport', label: 'Sport', query: 'sports news Denmark' },
+  { id: 'football', label: 'Fodbold', query: 'football news Europe Denmark' },
+  { id: 'premier-league', label: 'Premier League', query: 'Premier League football news' },
+  { id: 'superliga', label: 'Superligaen', query: 'Danish Superliga football news' },
+  { id: 'liverpool', label: 'Liverpool', query: 'Liverpool FC news' },
+  { id: 'fck', label: 'FCK', query: '(FC Copenhagen OR FCK) football news' },
   { id: 'padel', label: 'Padel', query: 'padel news Denmark' },
   { id: 'tech', label: 'Tech & AI', query: '(artificial intelligence OR AI OR technology) news' },
   { id: 'ev', label: 'Biler & elbiler', query: '(electric vehicles OR electric cars) news Denmark' },
