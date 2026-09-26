@@ -12,7 +12,15 @@ const topics = [
   { id: 'gaming', label: 'Spil', icon: '▣', intro: 'Nyt fra spilverdenen og gaming.' },
   { id: 'culture', label: 'Film & serier', icon: '▻', intro: 'Nyt om film, serier og streaming.' },
 ];
-const state = { topic: 'all', items: [], saved: new Set(JSON.parse(localStorage.getItem('interessefeed:saved') || '[]')), lastUpdated: null, busy: false };
+function storedSet(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '[]');
+    return new Set(Array.isArray(value) ? value : []);
+  } catch {
+    return new Set();
+  }
+}
+const state = { topic: 'all', items: [], saved: storedSet('interessefeed:saved'), seen: storedSet('interessefeed:seen'), lastUpdated: null, busy: false };
 const els = {
   topicNavigation: document.querySelector('#topicNavigation'), storyList: document.querySelector('#storyList'), feedStatus: document.querySelector('#feedStatus'),
   emptyState: document.querySelector('#emptyState'), currentTopic: document.querySelector('#currentTopic'), pageTitle: document.querySelector('#pageTitle'),
@@ -64,24 +72,40 @@ function renderStories() {
   const isSavedView = state.topic === 'saved';
   let items = isSavedView ? state.items.filter((item) => state.saved.has(item.link)) : state.topic === 'all' ? state.items : state.items.filter((item) => item.topicId === state.topic);
   if (els.sortSelect.value === 'oldest') items = [...items].reverse();
+  if (els.sortSelect.value === 'biggest-unseen') {
+    items = [...items].sort((a, b) => {
+      const seenDifference = Number(state.seen.has(a.link)) - Number(state.seen.has(b.link));
+      if (seenDifference) return seenDifference;
+      const rankDifference = (Number.isFinite(a.feedRank) ? a.feedRank : 50) - (Number.isFinite(b.feedRank) ? b.feedRank : 50);
+      return rankDifference || Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0);
+    });
+  }
   els.totalCount.textContent = String(state.items.length);
   els.storyList.innerHTML = items.map((item) => {
     const topic = topicFor(item.topicId);
     const safeLink = validLink(item.link);
     const source = item.source || 'Nyhedskilde';
-    return `<article class="story-card">
+    const isSeen = state.seen.has(item.link);
+    return `<article class="story-card ${isSeen ? 'seen' : ''}">
       <div class="story-top"><span class="topic-pill">${escapeHtml(topic?.label || item.topicLabel || 'Nyt')}</span><span class="story-time">${escapeHtml(relativeTime(item.publishedAt))}</span></div>
       <h3>${escapeHtml(item.title)}</h3>
       ${item.description ? `<p class="description">${escapeHtml(item.description)}</p>` : ''}
       <div class="story-bottom"><div class="source-line"><span class="source-dot"></span><span class="source-name">${escapeHtml(source)}</span></div>
-        <div class="story-actions"><button class="save-button ${state.saved.has(item.link) ? 'saved' : ''}" data-save="${escapeHtml(item.link)}" aria-label="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}" title="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}">${state.saved.has(item.link) ? '★' : '☆'}</button><a class="open-link" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer" aria-label="Åbn artiklen hos ${escapeHtml(source)}" title="Åbn artikel">↗</a></div>
+        <div class="story-actions">${isSeen ? '<span class="seen-label">Set</span>' : ''}<button class="save-button ${state.saved.has(item.link) ? 'saved' : ''}" data-save="${escapeHtml(item.link)}" aria-label="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}" title="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}">${state.saved.has(item.link) ? '★' : '☆'}</button><a class="open-link" data-open="${escapeHtml(item.link)}" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer" aria-label="Åbn artiklen hos ${escapeHtml(source)}" title="Åbn artikel">↗</a></div>
       </div></article>`;
   }).join('');
   document.querySelectorAll('[data-save]').forEach((button) => button.addEventListener('click', () => toggleSaved(button.dataset.save)));
+  document.querySelectorAll('[data-open]').forEach((link) => link.addEventListener('click', () => markSeen(link.dataset.open)));
   els.emptyState.classList.toggle('hidden', items.length > 0);
   els.storyList.classList.toggle('hidden', items.length === 0);
   document.querySelector('#emptyTitle').textContent = isSavedView ? 'Ingen gemte historier endnu' : 'Her er roligt lige nu';
   document.querySelector('#emptyText').textContent = isSavedView ? 'Tryk på stjernen ved en artikel, hvis du vil læse den senere.' : 'Der er ikke noget nyt at vise. Prøv igen lidt senere.';
+}
+function markSeen(link) {
+  if (state.seen.has(link)) return;
+  state.seen.add(link);
+  localStorage.setItem('interessefeed:seen', JSON.stringify([...state.seen]));
+  window.setTimeout(renderStories, 0);
 }
 function renderHeader() {
   const topic = topicFor(state.topic);
