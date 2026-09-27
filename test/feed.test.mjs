@@ -3,14 +3,14 @@ import test from 'node:test';
 
 import feed from '../api/feed.mjs';
 
-function rss(title = 'Lokal historie') {
-  return `<?xml version="1.0"?><rss><channel><item>
-    <title>${title}</title>
-    <link>https://example.com/story</link>
+function rss(items = [{ title: 'Lokal historie', link: 'https://example.com/story', sourceUrl: 'https://example.com', description: 'En beskrivelse' }]) {
+  return `<?xml version="1.0"?><rss><channel>${items.map((item) => `<item>
+    <title>${item.title}</title>
+    <link>${item.link}</link>
     <pubDate>${new Date().toUTCString()}</pubDate>
-    <source url="https://example.com">Testavisen</source>
-    <description>En beskrivelse</description>
-  </item></channel></rss>`;
+    <source url="${item.sourceUrl}">Testavisen</source>
+    <description>${item.description}</description>
+  </item>`).join('')}</channel></rss>`;
 }
 
 test('the local feed uses Danish search terms and Danish Google News edition', async (t) => {
@@ -20,7 +20,11 @@ test('the local feed uses Danish search terms and Danish Google News edition', a
   globalThis.fetch = async (url, options) => {
     requestedUrl = new URL(url);
     requestedLanguage = options.headers['Accept-Language'];
-    return new Response(rss(), { status: 200 });
+    return new Response(rss([
+      { title: 'Lokal dansk historie', link: 'https://example.dk/dansk', sourceUrl: 'https://example.dk', description: 'En beskrivelse fra kommunen' },
+      { title: 'Local story in English', link: 'https://example.com/english', sourceUrl: 'https://example.com', description: 'News for international residents' },
+      { title: 'Norske nyheter fra kommunen', link: 'https://example.no/norsk', sourceUrl: 'https://example.no', description: 'Dette blir omtalt videre' },
+    ]), { status: 200 });
   };
   t.after(() => { globalThis.fetch = originalFetch; });
 
@@ -28,12 +32,15 @@ test('the local feed uses Danish search terms and Danish Google News edition', a
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(body.items.length, 1);
-  assert.equal(body.items[0].topicId, 'local');
+  assert.equal(body.items.length, 2);
+  assert.deepEqual(body.items.map((item) => item.title), ['Lokal dansk historie', 'Local story in English']);
+  assert.ok(body.items.every((item) => item.topicId === 'local'));
   assert.equal(requestedUrl.searchParams.get('hl'), 'da-DK');
   assert.equal(requestedUrl.searchParams.get('gl'), 'DK');
   assert.equal(requestedUrl.searchParams.get('ceid'), 'DK:da');
   assert.match(requestedUrl.searchParams.get('q'), /Frederikssund/);
   assert.match(requestedUrl.searchParams.get('q'), /Vinge/);
+  assert.match(requestedUrl.searchParams.get('q'), /-site:\.no/);
+  assert.match(requestedUrl.searchParams.get('q'), /-norsk -nyheter/);
   assert.equal(requestedLanguage, 'da-DK,da;q=0.9');
 });
