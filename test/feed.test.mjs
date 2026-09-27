@@ -39,7 +39,8 @@ test('the local feed uses Danish search terms and Danish Google News edition', a
   assert.equal(requestedUrl.searchParams.get('gl'), 'DK');
   assert.equal(requestedUrl.searchParams.get('ceid'), 'DK:da');
   assert.match(requestedUrl.searchParams.get('q'), /Frederikssund/);
-  assert.match(requestedUrl.searchParams.get('q'), /Vinge/);
+  assert.match(requestedUrl.searchParams.get('q'), /"Vinge Frederikssund"/);
+  assert.doesNotMatch(requestedUrl.searchParams.get('q'), /\bOR Vinge OR\b/);
   assert.match(requestedUrl.searchParams.get('q'), /-site:\.no/);
   assert.match(requestedUrl.searchParams.get('q'), /-norsk -nyheter/);
   assert.equal(requestedLanguage, 'da-DK,da;q=0.9');

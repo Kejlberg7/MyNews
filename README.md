@@ -21,4 +21,4 @@ Feedets RSS-resultater caches i Neon i fem minutter, så gentagne besøg ikke he
 
 ## Emner
 
-Lokalt (Frederikssund Kommune, herunder Vinge, Slangerup og Jægerspris), sport, fodbold, Premier League, Superligaen, Liverpool, FCK, padel, tech og AI, biler og elbiler, gaming samt film og serier. Du kan desuden tilføje op til 20 af dine egne emner med plusknappen; de gemmes lokalt i browseren.
+Lokalt (Frederikssund Kommune, herunder Vinge by i Frederikssund, Slangerup og Jægerspris), sport, fodbold, Premier League, Superligaen, Liverpool, FCK, padel, tech og AI, biler og elbiler, gaming samt film og serier. Du kan desuden tilføje op til 20 af dine egne emner med plusknappen; de gemmes lokalt i browseren.
