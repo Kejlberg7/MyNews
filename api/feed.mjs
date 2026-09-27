@@ -49,7 +49,10 @@ export default {
     if (request.method !== 'GET') return json({ error: 'Kun GET er tilladt.' }, 405);
     const url = new URL(request.url);
     const requested = url.searchParams.get('topic');
-    const selected = requested ? TOPICS.filter((topic) => topic.id === requested) : TOPICS;
+    const customQuery = url.searchParams.get('query')?.trim().slice(0, 100);
+    const customLabel = url.searchParams.get('label')?.trim().slice(0, 60);
+    const customTopic = requested?.startsWith('custom-') && customQuery && customLabel ? { id: requested.slice(0, 80), label: customLabel, query: customQuery } : null;
+    const selected = customTopic ? [customTopic] : requested ? TOPICS.filter((topic) => topic.id === requested) : TOPICS;
     if (!selected.length) return json({ error: 'Ukendt emne.' }, 400);
     if (!process.env.DATABASE_URL) {
       const results = await Promise.all(selected.map(async (topic) => {
