@@ -1,7 +1,13 @@
 import { neon } from '@neondatabase/serverless';
 
 const TOPICS = [
-  { id: 'local', label: 'Lokalt', query: 'Frederikssund Denmark news -weather' },
+  {
+    id: 'local',
+    label: 'Lokalt',
+    query: '(Frederikssund OR "Frederikssund Kommune" OR Vinge OR Slangerup OR Jægerspris) -vejr',
+    language: 'da',
+    country: 'DK',
+  },
   { id: 'sport', label: 'Sport', query: 'sports news Denmark' },
   { id: 'football', label: 'Fodbold', query: 'football news Europe Denmark' },
   { id: 'premier-league', label: 'Premier League', query: 'Premier League football news' },
@@ -36,8 +42,11 @@ function parseFeed(xml, topic) {
 }
 async function fetchTopic(topic) {
   const url = new URL('https://news.google.com/rss/search');
-  url.search = new URLSearchParams({ q: topic.query, hl: 'en-US', gl: 'US', ceid: 'US:en' }).toString();
-  const response = await fetch(url, { headers: { 'User-Agent': 'MyNews/1.0 (personal news reader)', Accept: 'application/rss+xml, application/xml, text/xml', 'Accept-Language': 'en-US,en;q=0.9' }, signal: AbortSignal.timeout(12000) });
+  const language = topic.language || 'en';
+  const country = topic.country || 'US';
+  const locale = `${language}-${country}`;
+  url.search = new URLSearchParams({ q: topic.query, hl: locale, gl: country, ceid: `${country}:${language}` }).toString();
+  const response = await fetch(url, { headers: { 'User-Agent': 'MyNews/1.0 (personal news reader)', Accept: 'application/rss+xml, application/xml, text/xml', 'Accept-Language': `${locale},${language};q=0.9` }, signal: AbortSignal.timeout(12000) });
   if (!response.ok) throw new Error(`Nyhedskilden svarede ${response.status}.`);
   return parseFeed(await response.text(), topic);
 }

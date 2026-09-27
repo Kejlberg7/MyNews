@@ -7,7 +7,13 @@ const { URL } = require('node:url');
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
 const TOPICS = [
-  { id: 'local', label: 'Lokalt', query: 'Frederikssund Denmark news -weather' },
+  {
+    id: 'local',
+    label: 'Lokalt',
+    query: '(Frederikssund OR "Frederikssund Kommune" OR Vinge OR Slangerup OR Jægerspris) -vejr',
+    language: 'da',
+    country: 'DK',
+  },
   { id: 'sport', label: 'Sport', query: 'sports news Denmark' },
   { id: 'football', label: 'Fodbold', query: 'football news Europe Denmark' },
   { id: 'premier-league', label: 'Premier League', query: 'Premier League football news' },
@@ -38,14 +44,14 @@ function parseFeed(xml, topic) {
     return { title: tag(item, 'title'), link: tag(item, 'link'), source: sourceMatch ? decodeXml(sourceMatch[2].replace(/<[^>]+>/g, '').trim()) : 'Google News', sourceUrl: sourceMatch?.[1] ? decodeXml(sourceMatch[1]) : '', description: tag(item, 'description').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim(), publishedAt: Number.isFinite(published) ? new Date(published).toISOString() : null, topicId: topic.id, topicLabel: topic.label };
   }).filter((item) => item.title && /^https:\/\//i.test(item.link) && item.publishedAt && Date.parse(item.publishedAt) >= cutoff).slice(0, 50);
 }
-function fetchText(url, redirects = 0) {
+function fetchText(url, redirects = 0, acceptLanguage = 'en-US,en;q=0.9') {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, { headers: { 'User-Agent': 'MyNews/1.0 (personal news reader)', Accept: 'application/rss+xml, application/xml, text/xml', 'Accept-Language': 'en-US,en;q=0.9' } }, (response) => {
+    const request = https.get(url, { headers: { 'User-Agent': 'MyNews/1.0 (personal news reader)', Accept: 'application/rss+xml, application/xml, text/xml', 'Accept-Language': acceptLanguage } }, (response) => {
       const status = response.statusCode || 0;
       if ([301, 302, 303, 307, 308].includes(status) && response.headers.location) {
         response.resume();
         if (redirects >= 5) return reject(new Error('For mange viderestillinger fra nyhedskilden.'));
-        return resolve(fetchText(new URL(response.headers.location, url), redirects + 1));
+        return resolve(fetchText(new URL(response.headers.location, url), redirects + 1, acceptLanguage));
       }
       if (status < 200 || status >= 300) { response.resume(); return reject(new Error(`Nyhedskilden svarede ${status}.`)); }
       const chunks = [];
@@ -61,8 +67,11 @@ async function getTopicFeed(topic) {
   const cached = cache.get(topic.id);
   if (cached && Date.now() - cached.at < CACHE_MS) return cached.items;
   const url = new URL('https://news.google.com/rss/search');
-  url.search = new URLSearchParams({ q: topic.query, hl: 'en-US', gl: 'US', ceid: 'US:en' }).toString();
-  const items = parseFeed(await fetchText(url), topic);
+  const language = topic.language || 'en';
+  const country = topic.country || 'US';
+  const locale = `${language}-${country}`;
+  url.search = new URLSearchParams({ q: topic.query, hl: locale, gl: country, ceid: `${country}:${language}` }).toString();
+  const items = parseFeed(await fetchText(url, 0, `${locale},${language};q=0.9`), topic);
   cache.set(topic.id, { at: Date.now(), items });
   return items;
 }
