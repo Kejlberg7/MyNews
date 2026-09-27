@@ -75,7 +75,10 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/topics') return send(res, 200, JSON.stringify(TOPICS.map(({ id, label }) => ({ id, label }))));
   if (url.pathname === '/api/feed') {
     const requested = url.searchParams.get('topic');
-    const selected = requested ? TOPICS.filter((topic) => topic.id === requested) : TOPICS;
+    const customQuery = url.searchParams.get('query')?.trim().slice(0, 100);
+    const customLabel = url.searchParams.get('label')?.trim().slice(0, 60);
+    const customTopic = requested?.startsWith('custom-') && customQuery && customLabel ? { id: requested.slice(0, 80), label: customLabel, query: customQuery } : null;
+    const selected = customTopic ? [customTopic] : requested ? TOPICS.filter((topic) => topic.id === requested) : TOPICS;
     if (!selected.length) return send(res, 400, JSON.stringify({ error: 'Ukendt emne.' }));
     const results = await Promise.allSettled(selected.map(getTopicFeed));
     const items = results.flatMap((result) => result.status === 'fulfilled' ? result.value : []);

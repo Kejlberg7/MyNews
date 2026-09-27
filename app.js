@@ -1,4 +1,4 @@
-const topics = [
+const defaultTopics = [
   { id: 'local', label: 'Lokalt', icon: '⌂', intro: 'Nyt tæt på dig — Vinge og Frederikssund.' },
   { id: 'sport', label: 'Sport', icon: '●', intro: 'De største historier og resultater fra sportens verden.' },
   { id: 'football', label: 'Fodbold', icon: '⚽', intro: 'Kampe, transfers og historier fra fodboldens verden.' },
@@ -12,6 +12,14 @@ const topics = [
   { id: 'gaming', label: 'Spil', icon: '▣', intro: 'Nyt fra spilverdenen og gaming.' },
   { id: 'culture', label: 'Film & serier', icon: '▻', intro: 'Nyt om film, serier og streaming.' },
 ];
+const customTopicIcons = ['✦', '◌', '◇', '◈', '○'];
+function storedTopics() {
+  try {
+    const value = JSON.parse(localStorage.getItem('interessefeed:topics') || '[]');
+    return Array.isArray(value) ? value.filter((topic) => topic && typeof topic.label === 'string' && typeof topic.id === 'string').slice(0, 20) : [];
+  } catch { return []; }
+}
+const topics = [...defaultTopics, ...storedTopics()];
 function storedSet(key) {
   try {
     const value = JSON.parse(localStorage.getItem(key) || '[]');
@@ -27,6 +35,7 @@ const els = {
   pageDescription: document.querySelector('#pageDescription'), sectionTitle: document.querySelector('#sectionTitle'), totalCount: document.querySelector('#totalCount'),
   lastUpdated: document.querySelector('#lastUpdated'), refreshButton: document.querySelector('#refreshButton'), sortSelect: document.querySelector('#sortSelect'),
   toast: document.querySelector('#toast'), sidebar: document.querySelector('#sidebar'), themeToggle: document.querySelector('#themeToggle'),
+  topicDialog: document.querySelector('#topicDialog'), topicForm: document.querySelector('#topicForm'), topicName: document.querySelector('#topicName'),
 };
 
 function applyTheme(theme, persist = true) {
@@ -64,9 +73,37 @@ function notify(message) {
 function renderTopics() {
   els.topicNavigation.innerHTML = topics.map(({ id, label, icon }) => `
     <button class="nav-item ${state.topic === id ? 'active' : ''}" data-topic="${id}">
-      <span class="topic-emoji">${icon}</span><span>${escapeHtml(label)}</span>
+      <span class="topic-emoji">${icon}</span><span class="topic-name">${escapeHtml(label)}</span>${id.startsWith('custom-') ? `<span class="remove-topic" data-remove-topic="${id}" role="button" tabindex="0" aria-label="Stop med at følge ${escapeHtml(label)}" title="Stop med at følge">×</span>` : ''}
     </button>`).join('');
   document.querySelectorAll('[data-topic]').forEach((button) => button.addEventListener('click', () => selectTopic(button.dataset.topic)));
+  document.querySelectorAll('[data-remove-topic]').forEach((button) => {
+    const remove = (event) => { event.stopPropagation(); removeTopic(button.dataset.removeTopic); };
+    button.addEventListener('click', remove);
+    button.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') remove(event); });
+  });
+}
+function saveCustomTopics() {
+  localStorage.setItem('interessefeed:topics', JSON.stringify(topics.filter((topic) => topic.id.startsWith('custom-'))));
+}
+function addTopic(label) {
+  const cleanLabel = label.trim().replace(/\s+/g, ' ');
+  if (!cleanLabel) return;
+  if (topics.some((topic) => topic.label.toLocaleLowerCase('da') === cleanLabel.toLocaleLowerCase('da'))) return notify('Du følger allerede dette emne.');
+  if (topics.length - defaultTopics.length >= 20) return notify('Du kan følge op til 20 egne emner.');
+  const id = `custom-${Date.now().toString(36)}`;
+  topics.push({ id, label: cleanLabel, query: cleanLabel, icon: customTopicIcons[topics.length % customTopicIcons.length], intro: `Seneste nyt om ${cleanLabel}.` });
+  saveCustomTopics(); renderTopics(); selectTopic(id); refresh();
+  notify(`${cleanLabel} er føjet til dit feed`);
+}
+function removeTopic(id) {
+  const index = topics.findIndex((topic) => topic.id === id && id.startsWith('custom-'));
+  if (index < 0) return;
+  const [removed] = topics.splice(index, 1);
+  state.items = state.items.filter((item) => item.topicId !== id);
+  saveCustomTopics();
+  if (state.topic === id) selectTopic('all');
+  renderTopics(); renderStories();
+  notify(`Du følger ikke længere ${removed.label}`);
 }
 function renderStories() {
   const isSavedView = state.topic === 'saved';
@@ -139,9 +176,13 @@ async function refresh() {
   els.refreshButton.querySelector('.refresh-icon').classList.add('spin');
   els.feedStatus.textContent = 'Henter de seneste historier …';
   try {
-    const response = await fetch('/api/feed');
-    const result = await response.json();
-    if (!response.ok && !result.items?.length) throw new Error('Nyhedsfeedet kunne ikke hentes lige nu.');
+    const customTopics = topics.filter((topic) => topic.id.startsWith('custom-'));
+    const requests = [fetch('/api/feed'), ...customTopics.map((topic) => fetch(`/api/feed?topic=${encodeURIComponent(topic.id)}&query=${encodeURIComponent(topic.query || topic.label)}&label=${encodeURIComponent(topic.label)}`))];
+    const responses = await Promise.all(requests);
+    const results = await Promise.all(responses.map((response) => response.json().then((result) => ({ response, result }))));
+    const successful = results.filter(({ response, result }) => response.ok || result.items?.length);
+    if (!successful.length) throw new Error('Nyhedsfeedet kunne ikke hentes lige nu.');
+    const result = { items: successful.flatMap((entry) => entry.result.items || []), updatedAt: new Date().toISOString(), errors: results.reduce((sum, entry) => sum + (entry.result.errors || (entry.response.ok ? 0 : 1)), 0) };
     const byLink = new Map();
     for (const item of [...result.items, ...state.items]) if (!byLink.has(item.link)) byLink.set(item.link, item);
     state.items = [...byLink.values()].sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0));
@@ -172,5 +213,10 @@ els.refreshButton.addEventListener('click', refresh);
 document.querySelector('#emptyRefresh').addEventListener('click', refresh);
 els.sortSelect.addEventListener('change', renderStories);
 document.querySelector('#menuToggle').addEventListener('click', () => els.sidebar.classList.toggle('open'));
+document.querySelector('#addTopicButton').addEventListener('click', () => { els.topicDialog.showModal(); window.setTimeout(() => els.topicName.focus(), 0); });
+els.topicForm.addEventListener('submit', (event) => {
+  if (event.submitter?.value === 'cancel') return;
+  event.preventDefault(); addTopic(els.topicName.value); els.topicForm.reset(); els.topicDialog.close();
+});
 document.addEventListener('click', (event) => { if (els.sidebar.classList.contains('open') && !els.sidebar.contains(event.target) && !event.target.closest('#menuToggle')) els.sidebar.classList.remove('open'); });
 renderHeader(); refresh();

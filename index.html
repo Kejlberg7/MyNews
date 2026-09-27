@@ -29,7 +29,7 @@
           <button class="nav-item active" data-topic="all"><span class="nav-icon">▤</span><span>Alt nyt</span><span class="nav-count" id="totalCount">—</span></button>
           <button class="nav-item" data-topic="saved"><span class="nav-icon">☆</span><span>Gemt til senere</span></button>
         </nav>
-        <div class="sidebar-label topics-label">DINE EMNER <button class="add-topic" title="Emner kan tilpasses i denne prototype" aria-label="Emner kan tilpasses">＋</button></div>
+        <div class="sidebar-label topics-label">DINE EMNER <button class="add-topic" id="addTopicButton" title="Følg et nyt emne" aria-label="Følg et nyt emne">＋</button></div>
         <nav class="navigation topic-navigation" id="topicNavigation" aria-label="Dine interesser"></nav>
         <div class="sidebar-note">
           <div class="note-icon">✳</div>
@@ -62,6 +62,15 @@
         <footer class="page-footer"><span>Historier fra åbne nyhedskilder</span><span>·</span><span>Åbn artiklen hos udgiveren</span><span class="footer-right">Dit feed bliver på denne enhed</span></footer>
       </main>
     </div>
+    <dialog class="topic-dialog" id="topicDialog" aria-labelledby="topicDialogTitle">
+      <form class="topic-form" id="topicForm" method="dialog">
+        <div class="dialog-heading"><div><div class="feed-kicker">TILPAS DIT FEED</div><h2 id="topicDialogTitle">Følg noget nyt</h2></div><button class="dialog-close" value="cancel" aria-label="Luk">×</button></div>
+        <p>Tilføj et emne, en person, en klub eller noget helt fjerde. Vi finder de seneste historier til dig.</p>
+        <label for="topicName">Hvad vil du følge?</label>
+        <input id="topicName" name="topicName" maxlength="60" autocomplete="off" placeholder="Fx Formel 1, København eller klima" required />
+        <div class="form-actions"><button class="cancel-button" value="cancel">Annuller</button><button class="submit-topic" value="default">Følg emne</button></div>
+      </form>
+    </dialog>
     <div class="toast" id="toast" role="status"></div>
     <script src="/app.js" defer></script>
   </body>
