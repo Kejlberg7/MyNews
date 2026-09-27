@@ -1,6 +1,6 @@
 # MyNews
 
-Et personligt nyhedsfeed, der samler dine interesser uden sociale mediers feed-algoritmer. Historier hentes fra Google News RSS på engelsk; brugerfladen er dansk. Gemte historier opbevares lokalt i browseren.
+Et personligt nyhedsfeed, der samler dine interesser uden sociale mediers feed-algoritmer. Historier hentes fra Google News RSS; lokale historier søges på dansk, mens de øvrige feeds primært er engelske. Brugerfladen er dansk, og gemte historier opbevares lokalt i browseren.
 
 ## Kør lokalt
 
@@ -21,4 +21,4 @@ Feedets RSS-resultater caches i Neon i fem minutter, så gentagne besøg ikke he
 
 ## Emner
 
-Lokalt (Frederikssund), sport, fodbold, Premier League, Superligaen, Liverpool, FCK, padel, tech og AI, biler og elbiler, gaming samt film og serier. Du kan desuden tilføje op til 20 af dine egne emner med plusknappen; de gemmes lokalt i browseren.
+Lokalt (Frederikssund Kommune, herunder Vinge, Slangerup og Jægerspris), sport, fodbold, Premier League, Superligaen, Liverpool, FCK, padel, tech og AI, biler og elbiler, gaming samt film og serier. Du kan desuden tilføje op til 20 af dine egne emner med plusknappen; de gemmes lokalt i browseren.
