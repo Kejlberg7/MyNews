@@ -4,7 +4,7 @@ const TOPICS = [
   {
     id: 'local',
     label: 'Lokalt',
-    query: '(Frederikssund OR "Frederikssund Kommune" OR Vinge OR Slangerup OR Jægerspris) -vejr -site:.no -norsk -nyheter',
+    query: '(Frederikssund OR "Frederikssund Kommune" OR "Vinge Frederikssund" OR Slangerup OR Jægerspris) -vejr -site:.no -norsk -nyheter',
     language: 'da',
     country: 'DK',
   },
