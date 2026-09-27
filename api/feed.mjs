@@ -4,7 +4,7 @@ const TOPICS = [
   {
     id: 'local',
     label: 'Lokalt',
-    query: '(Frederikssund OR "Frederikssund Kommune" OR Vinge OR Slangerup OR Jægerspris) -vejr',
+    query: '(Frederikssund OR "Frederikssund Kommune" OR Vinge OR Slangerup OR Jægerspris) -vejr -site:.no -norsk -nyheter',
     language: 'da',
     country: 'DK',
   },
@@ -30,6 +30,22 @@ function tag(xml, name) {
   const match = xml.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, 'i'));
   return match ? decodeXml(match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()) : '';
 }
+function isNorwegianLocalStory(item) {
+  try {
+    const hostname = new URL(item.sourceUrl || item.link).hostname.toLowerCase();
+    if (hostname === 'no' || hostname.endsWith('.no')) return true;
+  } catch {
+    // Invalid source URLs are handled by the normal link validation.
+  }
+
+  const text = `${item.title} ${item.description}`.toLocaleLowerCase('nb-NO');
+  if (/\b(?:nyheter|norsk|norge|norges|fylke|fylkeskommune)\b/u.test(text)) return true;
+  const norwegianSignals = text.match(/\b(?:av|ble|blir|etter|fortsatt|gjennom|mener|ordfører|sier|ønsker)\b/gu) || [];
+  return new Set(norwegianSignals).size >= 2;
+}
+function allowedTopicItems(topic, items) {
+  return topic.id === 'local' ? items.filter((item) => !isNorwegianLocalStory(item)) : items;
+}
 function parseFeed(xml, topic) {
   const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
   return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].map(([, item], feedRank) => {
@@ -38,7 +54,9 @@ function parseFeed(xml, topic) {
     const published = Date.parse(tag(item, 'pubDate'));
     const description = tag(item, 'description').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
     return { title: tag(item, 'title'), link, source: sourceMatch ? decodeXml(sourceMatch[2].replace(/<[^>]+>/g, '').trim()) : 'Google News', sourceUrl: sourceMatch?.[1] ? decodeXml(sourceMatch[1]) : '', description, publishedAt: Number.isFinite(published) ? new Date(published).toISOString() : null, topicId: topic.id, topicLabel: topic.label, feedRank };
-  }).filter((item) => item.title && /^https:\/\//i.test(item.link) && item.publishedAt && Date.parse(item.publishedAt) >= cutoff).slice(0, 50);
+  }).filter((item) => item.title && /^https:\/\//i.test(item.link) && item.publishedAt && Date.parse(item.publishedAt) >= cutoff)
+    .filter((item) => topic.id !== 'local' || !isNorwegianLocalStory(item))
+    .slice(0, 50);
 }
 async function fetchTopic(topic) {
   const url = new URL('https://news.google.com/rss/search');
@@ -66,13 +84,13 @@ export default {
     if (!process.env.DATABASE_URL) {
       const results = await Promise.all(selected.map(async (topic) => {
         const cached = memoryCache.get(topic.id);
-        if (cached && Date.now() - cached.at < CACHE_MS) return { items: cached.items, error: false };
+        if (cached && Date.now() - cached.at < CACHE_MS) return { items: allowedTopicItems(topic, cached.items), error: false };
         try {
           const items = await fetchTopic(topic);
           memoryCache.set(topic.id, { at: Date.now(), items });
           return { items, error: false };
         } catch {
-          return { items: cached?.items || [], error: true };
+          return { items: allowedTopicItems(topic, cached?.items || []), error: true };
         }
       }));
       const items = results.flatMap((result) => result.items);
@@ -88,13 +106,13 @@ export default {
       const cache = new Map(cachedRows.map((row) => [row.topic_id, row]));
       const results = await Promise.all(selected.map(async (topic) => {
         const cached = cache.get(topic.id);
-        if (cached && Date.now() - new Date(cached.cached_at).getTime() < CACHE_MS) return { items: cached.items, error: false };
+        if (cached && Date.now() - new Date(cached.cached_at).getTime() < CACHE_MS) return { items: allowedTopicItems(topic, cached.items), error: false };
         try {
           const items = await fetchTopic(topic);
           await sql`INSERT INTO news_feed_cache (topic_id, items, cached_at) VALUES (${topic.id}, ${JSON.stringify(items)}::jsonb, now()) ON CONFLICT (topic_id) DO UPDATE SET items = EXCLUDED.items, cached_at = EXCLUDED.cached_at`;
           return { items, error: false };
         } catch {
-          return { items: cached?.items || [], error: true };
+          return { items: allowedTopicItems(topic, cached?.items || []), error: true };
         }
       }));
       const items = results.flatMap((result) => result.items);
