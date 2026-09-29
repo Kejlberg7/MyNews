@@ -229,6 +229,18 @@ export default {
       const candidates = consolidate(rssItems);
       if (!candidates.length) return json({ ok: true, fetched: 0, published: 0, errors: feeds.filter((result) => result.status === 'rejected').length, durationMs: Date.now() - startedAt });
 
+      const existingIds = new Set(existing.map((story) => story.story_id));
+      const topicUpdates = candidates
+        .filter((item) => existingIds.has(item.storyId))
+        .map((item) => ({ story_id: item.storyId, topic_ids: item.topicIds }));
+      if (topicUpdates.length) {
+        await sql`UPDATE news_stories AS stories SET topic_ids = ARRAY(
+            SELECT DISTINCT topic_id FROM unnest(stories.topic_ids || updates.topic_ids) AS expanded(topic_id)
+          )
+          FROM jsonb_to_recordset(${JSON.stringify(topicUpdates)}::jsonb) AS updates(story_id text, topic_ids text[])
+          WHERE stories.story_id = updates.story_id`;
+      }
+
       const resolvedCandidates = await resolveGoogleNewsUrls(candidates);
       const withArticleText = await withConcurrency(resolvedCandidates, 12, fetchArticle);
       const missingImageStories = existing

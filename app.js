@@ -11,6 +11,8 @@ const defaultTopics = [
   { id: 'ev', label: 'Biler & elbiler', icon: '↗', intro: 'Nyt om biler, elbiler og transport.' },
   { id: 'gaming', label: 'Spil', icon: '▣', intro: 'Nyt fra spilverdenen og gaming.' },
   { id: 'culture', label: 'Film & serier', icon: '▻', intro: 'Nyt om film, serier og streaming.' },
+  { id: 'world', label: 'Verden', icon: '◎', intro: 'Vigtige internationale historier, som er værd at kende til.' },
+  { id: 'surprise', label: 'Overraskelser', icon: '✦', intro: 'To historier om dagen fra områder, du måske ikke selv følger endnu.' },
 ];
 const customTopicIcons = ['✦', '◌', '◇', '◈', '○'];
 function storedTopics() {
@@ -28,13 +30,19 @@ function storedSet(key) {
     return new Set();
   }
 }
-const state = { topic: 'all', items: [], saved: storedSet('interessefeed:saved'), seen: storedSet('interessefeed:seen'), lastUpdated: null, busy: false };
+function storedObject(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '{}');
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch { return {}; }
+}
+const state = { topic: 'all', items: [], saved: storedSet('interessefeed:saved'), seen: storedSet('interessefeed:seen'), feedback: storedObject('interessefeed:feedback'), readFilter: localStorage.getItem('interessefeed:read-filter') || 'all', lastUpdated: null, busy: false };
 const els = {
   topicNavigation: document.querySelector('#topicNavigation'), storyList: document.querySelector('#storyList'), feedStatus: document.querySelector('#feedStatus'),
   emptyState: document.querySelector('#emptyState'), currentTopic: document.querySelector('#currentTopic'), pageTitle: document.querySelector('#pageTitle'),
   pageDescription: document.querySelector('#pageDescription'), sectionTitle: document.querySelector('#sectionTitle'), totalCount: document.querySelector('#totalCount'),
   lastUpdated: document.querySelector('#lastUpdated'), refreshButton: document.querySelector('#refreshButton'), sortSelect: document.querySelector('#sortSelect'),
-  toast: document.querySelector('#toast'), sidebar: document.querySelector('#sidebar'), themeToggle: document.querySelector('#themeToggle'),
+  toast: document.querySelector('#toast'), sidebar: document.querySelector('#sidebar'), themeToggle: document.querySelector('#themeToggle'), readFilter: document.querySelector('#readFilter'),
   topicDialog: document.querySelector('#topicDialog'), topicForm: document.querySelector('#topicForm'), topicName: document.querySelector('#topicName'),
 };
 els.storyList.addEventListener('error', (event) => {
@@ -116,7 +124,10 @@ function removeTopic(id) {
 }
 function renderStories() {
   const isSavedView = state.topic === 'saved';
-  let items = isSavedView ? state.items.filter((item) => state.saved.has(item.link)) : state.topic === 'all' ? state.items : state.items.filter((item) => item.topicId === state.topic);
+  let items = isSavedView ? state.items.filter((item) => state.saved.has(item.link)) : state.topic === 'all' ? state.items : state.items.filter((item) => item.topicId === state.topic || item.topicIds?.includes(state.topic));
+  if (state.readFilter === 'read') items = items.filter((item) => state.seen.has(item.link));
+  if (state.readFilter === 'unread') items = items.filter((item) => !state.seen.has(item.link));
+  if (state.topic === 'surprise') items = items.slice(0, 2);
   if (els.sortSelect.value === 'oldest') items = [...items].reverse();
   if (els.sortSelect.value === 'biggest-unseen') {
     items = [...items].sort((a, b) => {
@@ -131,8 +142,9 @@ function renderStories() {
     const topic = topicFor(item.topicId);
     const safeLink = validLink(item.link);
     const source = item.source || 'Nyhedskilde';
-    const topicLabel = topic?.label || item.topicLabel || 'Nyt';
+    const topicLabel = state.topic !== 'all' && state.topic !== 'saved' ? topic?.label || item.topicLabel || 'Nyt' : item.topicLabel || 'Nyt';
     const isSeen = state.seen.has(item.link);
+    const vote = state.feedback[item.link] || '';
     const imageUrl = item.imageUrl ? validLink(item.imageUrl) : '';
     const summary = item.summary || item.description || '';
     const sourceInitial = [...source.trim()][0]?.toLocaleUpperCase('da') || 'N';
@@ -147,12 +159,20 @@ function renderStories() {
         <h3>${escapeHtml(item.title)}</h3>
         ${summary ? `<p class="description">${escapeHtml(summary)}</p>` : ''}
         <div class="post-footer">
-          <div class="source-line">${isSeen ? '<span class="seen-label">Set</span>' : ''}<span class="source-dot"></span><span class="source-name">${escapeHtml(source)}</span></div>
-          <div class="post-actions"><button class="save-button ${state.saved.has(item.link) ? 'saved' : ''}" data-save="${escapeHtml(item.link)}" aria-label="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}" title="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}">${state.saved.has(item.link) ? '★' : '☆'}</button><a class="read-article" data-open="${escapeHtml(item.link)}" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Læs hele artiklen <span aria-hidden="true">↗</span></a></div>
+          <div class="source-line"><span class="source-dot"></span><span class="source-name">${escapeHtml(source)}</span></div>
+          <div class="post-actions">
+            <button class="feedback-button ${vote === 'like' ? 'selected' : ''}" data-vote="like" data-link="${escapeHtml(item.link)}" aria-label="${vote === 'like' ? 'Fjern like' : 'Like historien'}" aria-pressed="${vote === 'like'}" title="${vote === 'like' ? 'Du kan lide denne historie' : 'Jeg kan lide denne historie'}">👍</button>
+            <button class="feedback-button ${vote === 'dislike' ? 'selected' : ''}" data-vote="dislike" data-link="${escapeHtml(item.link)}" aria-label="${vote === 'dislike' ? 'Fjern dislike' : 'Vis færre historier som denne'}" aria-pressed="${vote === 'dislike'}" title="${vote === 'dislike' ? 'Du vil se færre historier som denne' : 'Vis færre historier som denne'}">👎</button>
+            <button class="read-state-button ${isSeen ? 'is-seen' : ''}" data-seen="${escapeHtml(item.link)}" aria-label="${isSeen ? 'Markér som ulæst' : 'Markér som læst'}" title="${isSeen ? 'Markér som ulæst' : 'Markér som læst'}">${isSeen ? '✓ Læst' : '○ Ulæst'}</button>
+            <button class="save-button ${state.saved.has(item.link) ? 'saved' : ''}" data-save="${escapeHtml(item.link)}" aria-label="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}" title="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}">${state.saved.has(item.link) ? '★' : '☆'}</button>
+            <a class="read-article" data-open="${escapeHtml(item.link)}" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Læs hele artiklen <span aria-hidden="true">↗</span></a>
+          </div>
         </div>
       </div></article>`;
   }).join('');
   document.querySelectorAll('[data-save]').forEach((button) => button.addEventListener('click', () => toggleSaved(button.dataset.save)));
+  document.querySelectorAll('[data-vote]').forEach((button) => button.addEventListener('click', () => toggleFeedback(button.dataset.link, button.dataset.vote)));
+  document.querySelectorAll('[data-seen]').forEach((button) => button.addEventListener('click', () => toggleSeen(button.dataset.seen)));
   document.querySelectorAll('[data-open]').forEach((link) => link.addEventListener('click', () => markSeen(link.dataset.open)));
   els.emptyState.classList.toggle('hidden', items.length > 0);
   els.storyList.classList.toggle('hidden', items.length === 0);
@@ -165,11 +185,22 @@ function markSeen(link) {
   localStorage.setItem('interessefeed:seen', JSON.stringify([...state.seen]));
   window.setTimeout(renderStories, 0);
 }
+function toggleSeen(link) {
+  if (state.seen.has(link)) state.seen.delete(link); else state.seen.add(link);
+  localStorage.setItem('interessefeed:seen', JSON.stringify([...state.seen]));
+  renderStories();
+}
+function toggleFeedback(link, vote) {
+  if (state.feedback[link] === vote) delete state.feedback[link]; else state.feedback[link] = vote;
+  localStorage.setItem('interessefeed:feedback', JSON.stringify(state.feedback));
+  renderStories();
+  notify(vote === 'like' ? 'Tak — noteret som en historie, du kan lide.' : 'Tak — noteret, så vi senere kan justere dit udvalg.');
+}
 function renderHeader() {
   const topic = topicFor(state.topic);
   const title = state.topic === 'all' ? 'Alt nyt' : state.topic === 'saved' ? 'Gemt til senere' : topic?.label;
   els.currentTopic.textContent = title;
-  els.sectionTitle.textContent = state.topic === 'saved' ? 'Dine gemte historier' : state.topic === 'all' ? 'Seneste historier' : `Seneste om ${topic?.label.toLowerCase()}`;
+  els.sectionTitle.textContent = state.topic === 'saved' ? 'Dine gemte historier' : state.topic === 'all' ? 'Seneste historier' : state.topic === 'world' ? 'Vigtige historier fra verden' : state.topic === 'surprise' ? 'Dagens to overraskelser' : `Seneste om ${topic?.label.toLowerCase()}`;
   if (state.topic === 'all') {
     els.pageTitle.innerHTML = 'Gør plads til<br /><em>det, du følger.</em>';
     els.pageDescription.textContent = 'Nyt fra dine interesser, samlet ét sted. I rækkefølge efter tid — så du selv bestemmer, hvad der er vigtigt.';
@@ -233,6 +264,13 @@ els.themeToggle.addEventListener('click', toggleTheme);
 els.refreshButton.addEventListener('click', refresh);
 document.querySelector('#emptyRefresh').addEventListener('click', refresh);
 els.sortSelect.addEventListener('change', renderStories);
+els.readFilter.value = ['all', 'read', 'unread'].includes(state.readFilter) ? state.readFilter : 'all';
+state.readFilter = els.readFilter.value;
+els.readFilter.addEventListener('change', () => {
+  state.readFilter = els.readFilter.value;
+  localStorage.setItem('interessefeed:read-filter', state.readFilter);
+  renderStories();
+});
 document.querySelector('#menuToggle').addEventListener('click', () => els.sidebar.classList.toggle('open'));
 document.querySelector('#addTopicButton').addEventListener('click', () => { els.topicDialog.showModal(); window.setTimeout(() => els.topicName.focus(), 0); });
 els.topicForm.addEventListener('submit', (event) => {
