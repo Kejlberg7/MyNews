@@ -123,6 +123,7 @@ function removeTopic(id) {
   notify(`Du følger ikke længere ${removed.label}`);
 }
 function renderStories() {
+  state.items = state.items.filter((item) => typeof item.summary === 'string' && item.summary.trim());
   const isSavedView = state.topic === 'saved';
   let items = isSavedView ? state.items.filter((item) => state.saved.has(item.link)) : state.topic === 'all' ? state.items : state.items.filter((item) => item.topicId === state.topic || item.topicIds?.includes(state.topic));
   if (state.readFilter === 'read') items = items.filter((item) => state.seen.has(item.link));
@@ -146,7 +147,7 @@ function renderStories() {
     const isSeen = state.seen.has(item.link);
     const vote = state.feedback[item.link] || '';
     const imageUrl = item.imageUrl ? validLink(item.imageUrl) : '';
-    const summary = item.summary || item.description || '';
+    const summary = item.summary.trim();
     const sourceInitial = [...source.trim()][0]?.toLocaleUpperCase('da') || 'N';
     return `<article class="story-card ${isSeen ? 'seen' : ''}">
       <div class="post-head">
@@ -223,25 +224,25 @@ function toggleSaved(link) {
 }
 async function refresh() {
   if (state.busy) return;
+  state.items = state.items.filter((item) => typeof item.summary === 'string' && item.summary.trim());
   state.busy = true;
   els.refreshButton.disabled = true;
   els.refreshButton.querySelector('.refresh-icon').classList.add('spin');
   els.feedStatus.textContent = 'Henter de seneste historier …';
   try {
     const customTopics = topics.filter((topic) => topic.id.startsWith('custom-'));
-    const requests = [fetch('/api/feed'), ...customTopics.map((topic) => fetch(`/api/feed?topic=${encodeURIComponent(topic.id)}&query=${encodeURIComponent(topic.query || topic.label)}&label=${encodeURIComponent(topic.label)}`))];
-    const responses = await Promise.all(requests);
-    const results = await Promise.all(responses.map((response) => response.json().then((result) => ({ response, result }))));
-    const successful = results.filter(({ response, result }) => response.ok || result.items?.length);
-    if (!successful.length) throw new Error('Nyhedsfeedet kunne ikke hentes lige nu.');
-    const result = { items: successful.flatMap((entry) => entry.result.items || []), updatedAt: new Date().toISOString(), errors: results.reduce((sum, entry) => sum + (entry.result.errors || (entry.response.ok ? 0 : 1)), 0) };
+    const response = await fetch('/api/feed');
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Nyhedsfeedet kunne ikke hentes lige nu.');
     const byLink = new Map();
-    for (const item of [...result.items, ...state.items]) if (!byLink.has(item.link)) byLink.set(item.link, item);
+    for (const item of [...(result.items || []), ...state.items]) {
+      if (typeof item.summary === 'string' && item.summary.trim() && item.link && !byLink.has(item.link)) byLink.set(item.link, item);
+    }
     state.items = [...byLink.values()].sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0));
     state.lastUpdated = new Date(result.updatedAt || Date.now());
     els.feedStatus.textContent = `${state.items.length} historier på tværs af ${topics.length} emner`;
     els.lastUpdated.textContent = `Opdateret ${new Intl.DateTimeFormat('da-DK', { hour: '2-digit', minute: '2-digit' }).format(state.lastUpdated)}`;
-    if (result.errors) notify('Nogle emner kunne ikke opdateres.');
+    if (customTopics.length) notify('Dine egne emner vises først, når de kan AI-behandles.');
     renderStories();
   } catch (error) {
     els.feedStatus.textContent = 'Kunne ikke hente historier';

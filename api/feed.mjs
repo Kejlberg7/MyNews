@@ -1,8 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import { fetchTopic, TOPICS, validImageUrl } from '../lib/news.mjs';
-
-const CACHE_MS = 5 * 60 * 1000;
-const memoryCache = new Map();
+import { TOPICS, validImageUrl } from '../lib/news.mjs';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -12,25 +9,11 @@ function json(body, status = 200) {
 }
 
 function resultResponse(results) {
-  const items = results.flatMap((result) => result.items);
+  const items = results.flatMap((result) => result.items)
+    .filter((item) => typeof item.summary === 'string' && item.summary.trim());
   items.sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0));
   const errors = results.filter((result) => result.error).length;
-  return json({ items, updatedAt: new Date().toISOString(), errors }, items.length ? 200 : 502);
-}
-
-async function fetchLive(selected) {
-  const results = await Promise.all(selected.map(async (topic) => {
-    const cached = memoryCache.get(topic.id);
-    if (cached && Date.now() - cached.at < CACHE_MS) return { items: cached.items, error: false };
-    try {
-      const items = await fetchTopic(topic);
-      memoryCache.set(topic.id, { at: Date.now(), items });
-      return { items, error: false };
-    } catch {
-      return { items: cached?.items || [], error: true };
-    }
-  }));
-  return resultResponse(results);
+  return json({ items, updatedAt: new Date().toISOString(), errors });
 }
 
 export default {
@@ -40,22 +23,19 @@ export default {
     const requested = url.searchParams.get('topic');
     const customQuery = url.searchParams.get('query')?.trim().slice(0, 100);
     const customLabel = url.searchParams.get('label')?.trim().slice(0, 60);
-    const customTopic = requested?.startsWith('custom-') && customQuery && customLabel
-      ? { id: requested.slice(0, 80), label: customLabel, query: customQuery }
-      : null;
-    const selected = customTopic ? [customTopic] : requested ? TOPICS.filter((topic) => topic.id === requested) : TOPICS;
+    const customTopic = requested?.startsWith('custom-') && customQuery && customLabel;
+    if (customTopic) {
+      return json({ items: [], updatedAt: new Date().toISOString(), errors: 0, notice: 'Egne emner er endnu ikke AI-behandlet.' });
+    }
+    const selected = requested ? TOPICS.filter((topic) => topic.id === requested) : TOPICS;
     if (!selected.length) return json({ error: 'Ukendt emne.' }, 400);
-    const curatedDiscoveryTopic = selected.some((topic) => topic.id === 'world' || topic.id === 'surprise');
-    const emptyCuratedFeed = () => json({ items: [], updatedAt: new Date().toISOString(), errors: 0 });
-
     const databaseUrl = process.env.DATABASE_URL;
-    if (!databaseUrl || customTopic) return curatedDiscoveryTopic && !customTopic ? emptyCuratedFeed() : fetchLive(selected);
+    if (!databaseUrl) return json({ error: 'Nyhederne kunne ikke hentes fra databasen.' }, 503);
 
     try {
       const sql = neon(databaseUrl);
       const rows = await sql`SELECT story_id, canonical_url, title, summary, source, source_url, image_url, published_at, topic_id, topic_label, topic_ids, processed_at FROM news_stories WHERE published_at > now() - interval '45 days' ORDER BY published_at DESC NULLS LAST LIMIT 250`;
-      if (!rows.length) return curatedDiscoveryTopic ? emptyCuratedFeed() : fetchLive(selected);
-      const selectedIds = new Set(selected.map((topic) => topic.id));
+      if (!rows.length) return resultResponse([{ items: [], error: false }]);
       const items = rows.map((row) => ({
         id: row.story_id,
         title: row.title,
@@ -70,12 +50,12 @@ export default {
         topicLabel: row.topic_label,
         topicIds: row.topic_ids || [row.topic_id],
         processedAt: row.processed_at ? new Date(row.processed_at).toISOString() : null,
-      })).filter((item) => !requested || item.topicIds.includes(requested) || item.topicId === requested);
-      if (!items.length) return curatedDiscoveryTopic ? emptyCuratedFeed() : fetchLive(selected);
+      })).filter((item) => typeof item.summary === 'string' && item.summary.trim())
+        .filter((item) => !requested || item.topicIds.includes(requested) || item.topicId === requested);
       return resultResponse([{ items, error: false }]);
     } catch (error) {
       console.error('Database-read fejl:', error);
-      return fetchLive(selected);
+      return json({ error: 'Nyhederne kunne ikke hentes fra databasen.' }, 503);
     }
   },
 };
