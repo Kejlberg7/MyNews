@@ -57,11 +57,71 @@ async function withConcurrency(items, limit, operation) {
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (next < items.length) {
       const index = next++;
-      output[index] = await operation(items[index]);
+      output[index] = await operation(items[index], index);
     }
   });
   await Promise.all(workers);
   return output;
+}
+
+async function resolveGoogleNewsUrls(items) {
+  const metadata = await withConcurrency(items, 8, async (item, index) => {
+    let url;
+    try { url = new URL(item.link); } catch { return { index, item, articleUrl: item.link }; }
+    if (url.hostname !== 'news.google.com' || !url.pathname.startsWith('/rss/articles/')) {
+      return { index, item, articleUrl: item.link };
+    }
+    try {
+      const response = await fetch(item.link, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MyNews/1.0)', Accept: 'text/html,application/xhtml+xml' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) return { index, item, articleUrl: item.link };
+      const html = await response.text();
+      const signature = html.match(/data-n-a-sg="([^"]+)"/)?.[1];
+      const timestamp = html.match(/data-n-a-ts="([^"]+)"/)?.[1];
+      if (!signature || !timestamp) return { index, item, articleUrl: item.link };
+      return { index, item, id: url.pathname.split('/').at(-1), signature, timestamp };
+    } catch {
+      return { index, item, articleUrl: item.link };
+    }
+  });
+  const pending = metadata.filter((entry) => entry.id && entry.signature && entry.timestamp);
+  if (!pending.length) return metadata.map((entry) => ({ ...entry.item, articleUrl: entry.articleUrl || entry.item.link }));
+
+  const context = [
+    ['X', 'X', ['X', 'X'], null, null, 1, 1, 'US:en', null, 1, null, null, null, null, null, 0, 1],
+    'X', 'X', 1, [1, 1, 1], 1, 1, null, 0, 0, null, 0,
+  ];
+  const envelopes = pending.map((entry) => [
+    'Fbv4je',
+    JSON.stringify(['garturlreq', context, entry.id, Number(entry.timestamp), entry.signature]),
+    null,
+    String(entry.index),
+  ]);
+  try {
+    const response = await fetch('https://news.google.com/_/DotsSplashUi/data/batchexecute?rpcids=Fbv4je', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: new URLSearchParams({ 'f.req': JSON.stringify([envelopes]) }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) throw new Error(`Google News URL-dekodning svarede ${response.status}.`);
+    const rows = JSON.parse((await response.text()).replace(/^\)\]\}'\s*/, '').trim());
+    const decoded = new Map();
+    for (const row of rows) {
+      if (!Array.isArray(row) || (row[0] !== 'wrb.fr' && row[1] !== 'Fbv4je')) continue;
+      let payload = row[2];
+      if (typeof payload === 'string') payload = JSON.parse(payload);
+      if (!Array.isArray(payload) || payload[0] !== 'garturlres' || typeof payload[1] !== 'string') continue;
+      const requestId = row.slice(3).reverse().find((value) => value !== null && value !== undefined);
+      const entry = pending.find((candidate) => String(candidate.index) === String(requestId));
+      if (entry && /^https:\/\//i.test(payload[1])) decoded.set(entry.index, payload[1]);
+    }
+    return metadata.map((entry) => ({ ...entry.item, articleUrl: decoded.get(entry.index) || entry.articleUrl || entry.item.link }));
+  } catch {
+    return metadata.map((entry) => ({ ...entry.item, articleUrl: entry.articleUrl || entry.item.link }));
+  }
 }
 
 async function summarizeAndFilter(openai, candidates, existing) {
@@ -168,7 +228,8 @@ export default {
       const candidates = consolidate(rssItems);
       if (!candidates.length) return json({ ok: true, fetched: 0, published: 0, errors: feeds.filter((result) => result.status === 'rejected').length, durationMs: Date.now() - startedAt });
 
-      const withArticleText = await withConcurrency(candidates, 12, fetchArticle);
+      const resolvedCandidates = await resolveGoogleNewsUrls(candidates);
+      const withArticleText = await withConcurrency(resolvedCandidates, 12, fetchArticle);
       const imageUpdates = withArticleText
         .filter((item) => item.imageUrl && item.imageUrl !== item.link)
         .map((item) => ({ canonical_url: item.link, image_url: item.imageUrl }));
