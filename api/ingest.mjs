@@ -8,6 +8,7 @@ const MAX_EXISTING_HEADLINES = 220;
 const MAX_DURATION_SECONDS = 240;
 const AI_BATCH_SIZE = 18;
 const MAX_IMAGE_BACKFILL = 24;
+const TITLE_BACKFILL_LIMIT = 60;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -155,7 +156,9 @@ For emnet Verden skal du prioritere større internationale udviklinger inden for
 
 For emnet Overraskelser skal du prioritere veldokumenterede opdagelser, forskning, natur, historie, kultur og uventede udviklinger, der kan åbne et nyt interesseområde. Hvis mindst to forskellige kandidater har konkrete, troværdige oplysninger, skal du beholde de to mest interessante. Behold kun artikler med konkrete oplysninger.
 
-For hver keep=true skal summary være en selvstændig, letlæselig dansk tekst på 3-5 sætninger, cirka 60-100 ord. Skriv konkret hvad der er sket, hvem det handler om, de vigtigste fakta og hvorfor historien er relevant. Brug kun oplysninger fra articleText/title. Opfind aldrig detaljer. Hvis kilden er tynd, skriv kortere og gør tydeligt, at artiklen kun oplyser begrænset information. Undgå direkte citater. For keep=false skal summary være en tom tekst. Returnér én post for hvert kandidat-id.`
+For hver keep=true skal danishTitle være en kort, naturlig dansk oversættelse af overskriften. Hvis overskriften allerede er dansk, behold den. Bevar navne, tal og faktuelle formuleringer; tilføj ikke oplysninger.
+
+For hver keep=true skal summary være en selvstændig, letlæselig dansk tekst på 3-5 sætninger, cirka 60-100 ord. Skriv konkret hvad der er sket, hvem det handler om, de vigtigste fakta og hvorfor historien er relevant. Brug kun oplysninger fra articleText/title. Opfind aldrig detaljer. Hvis kilden er tynd, skriv kortere og gør tydeligt, at artiklen kun oplyser begrænset information. Undgå direkte citater. For keep=false skal danishTitle og summary være tomme tekster. Returnér én post for hvert kandidat-id.`
         },
         { role: 'user', content: input },
       ],
@@ -174,9 +177,10 @@ For hver keep=true skal summary være en selvstændig, letlæselig dansk tekst p
                   properties: {
                     id: { type: 'string' },
                     keep: { type: 'boolean' },
+                    danishTitle: { type: 'string' },
                     summary: { type: 'string' },
                   },
-                  required: ['id', 'keep', 'summary'],
+                  required: ['id', 'keep', 'danishTitle', 'summary'],
                   additionalProperties: false,
                 },
               },
@@ -191,9 +195,63 @@ For hver keep=true skal summary være en selvstændig, letlæselig dansk tekst p
     const knownIds = new Set(batch.map((item) => item.storyId));
     const reviewed = new Map(result.stories.filter((story) => knownIds.has(story.id)).map((story) => [story.id, story]));
     accepted.push(...batch.filter((candidate) => reviewed.get(candidate.storyId)?.keep && reviewed.get(candidate.storyId)?.summary?.trim())
-      .map((candidate) => ({ ...candidate, summary: reviewed.get(candidate.storyId).summary.trim() })));
+      .map((candidate) => ({
+        ...candidate,
+        translatedTitle: reviewed.get(candidate.storyId).danishTitle?.trim() || candidate.title,
+        summary: reviewed.get(candidate.storyId).summary.trim(),
+      })));
   }
   return accepted;
+}
+
+async function translateMissingTitles(openai, sql) {
+  const rows = await sql`SELECT story_id, title FROM news_stories WHERE translated_title = '' ORDER BY published_at DESC NULLS LAST LIMIT ${TITLE_BACKFILL_LIMIT}`;
+  if (!rows.length) return 0;
+  const response = await openai.responses.create({
+    model: 'gpt-6-luna',
+    reasoning: { effort: 'low' },
+    max_output_tokens: 3000,
+    input: [
+      {
+        role: 'system',
+        content: 'Oversæt nyhedsoverskrifter til kort, naturligt dansk. Hvis en overskrift allerede er dansk, behold den uændret. Bevar navne, tal og faktuelle formuleringer. Tilføj aldrig nye oplysninger. Returnér én dansk overskrift for hvert id.',
+      },
+      { role: 'user', content: JSON.stringify({ stories: rows.map(({ story_id, title }) => ({ id: story_id, title })) }) },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'danish_headlines',
+        strict: true,
+        schema: {
+          type: 'object',
+          properties: {
+            stories: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: { id: { type: 'string' }, danishTitle: { type: 'string' } },
+                required: ['id', 'danishTitle'],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ['stories'],
+          additionalProperties: false,
+        },
+      },
+    },
+  });
+  const knownIds = new Set(rows.map((row) => row.story_id));
+  const updates = JSON.parse(response.output_text).stories
+    .filter((story) => knownIds.has(story.id) && story.danishTitle?.trim())
+    .map((story) => ({ story_id: story.id, translated_title: story.danishTitle.trim() }));
+  if (!updates.length) return 0;
+  const updated = await sql`UPDATE news_stories AS stories SET translated_title = updates.translated_title
+    FROM jsonb_to_recordset(${JSON.stringify(updates)}::jsonb) AS updates(story_id text, translated_title text)
+    WHERE stories.story_id = updates.story_id AND stories.translated_title = ''
+    RETURNING stories.story_id`;
+  return updated.length;
 }
 
 async function ensureSchema(sql) {
@@ -201,6 +259,7 @@ async function ensureSchema(sql) {
     story_id text PRIMARY KEY,
     canonical_url text NOT NULL UNIQUE,
     title text NOT NULL,
+    translated_title text NOT NULL DEFAULT '',
     summary text NOT NULL,
     source text NOT NULL DEFAULT 'Nyhedskilde',
     source_url text NOT NULL DEFAULT '',
@@ -211,6 +270,7 @@ async function ensureSchema(sql) {
     topic_ids text[] NOT NULL DEFAULT '{}',
     processed_at timestamptz NOT NULL DEFAULT now()
   )`;
+  await sql`ALTER TABLE news_stories ADD COLUMN IF NOT EXISTS translated_title text NOT NULL DEFAULT ''`;
   await sql`CREATE INDEX IF NOT EXISTS news_stories_published_at_idx ON news_stories (published_at DESC)`;
 }
 
@@ -227,11 +287,12 @@ export default {
       const sql = neon(process.env.DATABASE_URL);
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 45_000, maxRetries: 0 });
       await ensureSchema(sql);
+      const translatedExisting = await translateMissingTitles(openai, sql);
       const existing = await sql`SELECT story_id, canonical_url, title, source, source_url, image_url FROM news_stories WHERE published_at > now() - interval '45 days' ORDER BY published_at DESC LIMIT ${MAX_EXISTING_HEADLINES}`;
       const feeds = await Promise.allSettled(TOPICS.map((topic) => fetchTopic(topic, { limit: 50 })));
       const rssItems = feeds.flatMap((result, index) => result.status === 'fulfilled' ? result.value.slice(0, MAX_PER_TOPIC) : []);
       const candidates = consolidate(rssItems);
-      if (!candidates.length) return json({ ok: true, fetched: 0, published: 0, errors: feeds.filter((result) => result.status === 'rejected').length, durationMs: Date.now() - startedAt });
+      if (!candidates.length) return json({ ok: true, fetched: 0, published: 0, translatedExisting, errors: feeds.filter((result) => result.status === 'rejected').length, durationMs: Date.now() - startedAt });
 
       const topicUpdatesByStory = new Map();
       for (const item of candidates) {
@@ -284,6 +345,7 @@ export default {
           story_id: hash(item.link),
           canonical_url: item.link,
           title: item.title,
+          translated_title: item.translatedTitle || item.title,
           summary: item.summary,
           source: item.source || 'Nyhedskilde',
           source_url: item.sourceUrl || '',
@@ -295,14 +357,15 @@ export default {
         };
       });
       if (stored.length) {
-        await sql`INSERT INTO news_stories (story_id, canonical_url, title, summary, source, source_url, image_url, published_at, topic_id, topic_label, topic_ids)
-          SELECT story_id, canonical_url, title, summary, source, source_url, image_url, published_at, topic_id, topic_label, topic_ids
+        await sql`INSERT INTO news_stories (story_id, canonical_url, title, translated_title, summary, source, source_url, image_url, published_at, topic_id, topic_label, topic_ids)
+          SELECT story_id, canonical_url, title, translated_title, summary, source, source_url, image_url, published_at, topic_id, topic_label, topic_ids
           FROM jsonb_to_recordset(${JSON.stringify(stored)}::jsonb) AS x(
-            story_id text, canonical_url text, title text, summary text, source text, source_url text,
+            story_id text, canonical_url text, title text, translated_title text, summary text, source text, source_url text,
             image_url text, published_at timestamptz, topic_id text, topic_label text, topic_ids text[]
           )
           ON CONFLICT (canonical_url) DO UPDATE SET
             title = EXCLUDED.title,
+            translated_title = EXCLUDED.translated_title,
             summary = EXCLUDED.summary,
             source = EXCLUDED.source,
             source_url = EXCLUDED.source_url,
@@ -319,6 +382,7 @@ export default {
         fetched: rssItems.length,
         uniqueCandidates: candidates.length,
         published: stored.length,
+        translatedExisting,
         filtered: candidates.length - stored.length,
         imagesUpdated: refreshedImages.length,
         feedErrors: feeds.filter((result) => result.status === 'rejected').length,

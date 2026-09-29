@@ -34,11 +34,12 @@ export default {
 
     try {
       const sql = neon(databaseUrl);
-      const rows = await sql`SELECT story_id, canonical_url, title, summary, source, source_url, image_url, published_at, topic_id, topic_label, topic_ids, processed_at FROM news_stories WHERE published_at > now() - interval '45 days' ORDER BY published_at DESC NULLS LAST LIMIT 250`;
+      const rows = await sql`SELECT story_id, canonical_url, title, translated_title, summary, source, source_url, image_url, published_at, topic_id, topic_label, topic_ids, processed_at FROM news_stories WHERE published_at > now() - interval '45 days' ORDER BY published_at DESC NULLS LAST LIMIT 250`;
       if (!rows.length) return resultResponse([{ items: [], error: false }]);
       const items = rows.map((row) => ({
         id: row.story_id,
         title: row.title,
+        translatedTitle: row.translated_title || row.title,
         summary: row.summary,
         description: row.summary,
         link: row.canonical_url,

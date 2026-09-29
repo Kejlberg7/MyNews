@@ -160,7 +160,7 @@ function renderStories() {
       </div>
       ${imageUrl ? `<div class="post-image"><img data-story-image src="${escapeHtml(imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" /><div class="post-image-fallback post-placeholder" hidden><span>${escapeHtml(topicLabel)}</span><strong>ET OVERBLIK<br />UDEN STØJ</strong><i aria-hidden="true">✳</i></div></div>` : `<div class="post-placeholder"><span>${escapeHtml(topicLabel)}</span><strong>ET OVERBLIK<br />UDEN STØJ</strong><i aria-hidden="true">✳</i></div>`}
       <div class="post-body">
-        <h3>${escapeHtml(item.title)}</h3>
+        <h3>${escapeHtml(item.translatedTitle || item.title)}</h3>
         ${summary ? `<p class="description">${escapeHtml(summary)}</p>` : ''}
         <div class="post-footer">
           <div class="source-line"><span class="source-dot"></span><span class="source-name">${escapeHtml(source)}</span></div>
