@@ -151,6 +151,8 @@ async function summarizeAndFilter(openai, candidates, existing) {
 
 Vælg konkrete, relevante nyheder med reel information. Kassér reklamer, pressemeddelelser uden nyhedsværdi, clickbait, løse rygter, trivielle opdateringer, rene kampreferater uden særlig betydning og artikler, der blot gentager en historie, som allerede findes i alreadyPublished. Hvis en ny artikel er samme hændelse som en eksisterende, skal keep være false. Når kandidater overlapper, behold kun den mest informative og troværdige.
 
+For emnet Verden skal du prioritere større internationale udviklinger inden for konflikt og diplomati, valg, økonomi, klima, katastrofer, sundhed og teknologi med bred samfundsmæssig betydning. For emnet Overraskelser skal du prioritere veldokumenterede opdagelser, forskning, natur, historie, kultur og uventede udviklinger, der kan åbne et nyt interesseområde. Behold kun artikler med konkrete oplysninger.
+
 For hver keep=true skal summary være en selvstændig, letlæselig dansk tekst på 3-5 sætninger, cirka 60-100 ord. Skriv konkret hvad der er sket, hvem det handler om, de vigtigste fakta og hvorfor historien er relevant. Brug kun oplysninger fra articleText/title. Opfind aldrig detaljer. Hvis kilden er tynd, skriv kortere og gør tydeligt, at artiklen kun oplyser begrænset information. Undgå direkte citater. For keep=false skal summary være en tom tekst. Returnér én post for hvert kandidat-id.`
         },
         { role: 'user', content: input },
@@ -229,10 +231,18 @@ export default {
       const candidates = consolidate(rssItems);
       if (!candidates.length) return json({ ok: true, fetched: 0, published: 0, errors: feeds.filter((result) => result.status === 'rejected').length, durationMs: Date.now() - startedAt });
 
-      const existingIds = new Set(existing.map((story) => story.story_id));
-      const topicUpdates = candidates
-        .filter((item) => existingIds.has(item.storyId))
-        .map((item) => ({ story_id: item.storyId, topic_ids: item.topicIds }));
+      const topicUpdatesByStory = new Map();
+      for (const item of candidates) {
+        const matches = existing.filter((story) => story.story_id === item.storyId
+          || story.canonical_url === item.link
+          || ((story.source || '').toLocaleLowerCase('da') === (item.source || '').toLocaleLowerCase('da') && titleSimilarity(story.title, item.title) >= 0.9));
+        for (const story of matches) {
+          const prior = topicUpdatesByStory.get(story.story_id) || new Set();
+          for (const topicId of item.topicIds) prior.add(topicId);
+          topicUpdatesByStory.set(story.story_id, prior);
+        }
+      }
+      const topicUpdates = [...topicUpdatesByStory].map(([story_id, topic_ids]) => ({ story_id, topic_ids: [...topic_ids] }));
       if (topicUpdates.length) {
         await sql`UPDATE news_stories AS stories SET topic_ids = ARRAY(
             SELECT DISTINCT topic_id FROM unnest(stories.topic_ids || updates.topic_ids) AS expanded(topic_id)

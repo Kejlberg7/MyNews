@@ -45,14 +45,16 @@ export default {
       : null;
     const selected = customTopic ? [customTopic] : requested ? TOPICS.filter((topic) => topic.id === requested) : TOPICS;
     if (!selected.length) return json({ error: 'Ukendt emne.' }, 400);
+    const curatedDiscoveryTopic = selected.some((topic) => topic.id === 'world' || topic.id === 'surprise');
+    const emptyCuratedFeed = () => json({ items: [], updatedAt: new Date().toISOString(), errors: 0 });
 
     const databaseUrl = process.env.DATABASE_URL;
-    if (!databaseUrl || customTopic) return fetchLive(selected);
+    if (!databaseUrl || customTopic) return curatedDiscoveryTopic && !customTopic ? emptyCuratedFeed() : fetchLive(selected);
 
     try {
       const sql = neon(databaseUrl);
       const rows = await sql`SELECT story_id, canonical_url, title, summary, source, source_url, image_url, published_at, topic_id, topic_label, topic_ids, processed_at FROM news_stories WHERE published_at > now() - interval '45 days' ORDER BY published_at DESC NULLS LAST LIMIT 250`;
-      if (!rows.length) return fetchLive(selected);
+      if (!rows.length) return curatedDiscoveryTopic ? emptyCuratedFeed() : fetchLive(selected);
       const selectedIds = new Set(selected.map((topic) => topic.id));
       const items = rows.map((row) => ({
         id: row.story_id,
@@ -69,7 +71,7 @@ export default {
         topicIds: row.topic_ids || [row.topic_id],
         processedAt: row.processed_at ? new Date(row.processed_at).toISOString() : null,
       })).filter((item) => !requested || item.topicIds.includes(requested) || item.topicId === requested);
-      if (!items.length) return fetchLive(selected);
+      if (!items.length) return curatedDiscoveryTopic ? emptyCuratedFeed() : fetchLive(selected);
       return resultResponse([{ items, error: false }]);
     } catch (error) {
       console.error('Database-read fejl:', error);
