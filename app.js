@@ -204,7 +204,7 @@ function startReadTracking() {
       const timer = window.setTimeout(() => {
         readTimers.delete(card);
         if (document.visibilityState === 'visible' && card.isConnected && !state.seen.has(link)) markSeen(link);
-      }, 2200);
+      }, 10000);
       readTimers.set(card, timer);
     }
   }, { threshold: [0, 0.2, 0.3, 0.4, 0.6] });
