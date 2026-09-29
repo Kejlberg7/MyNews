@@ -38,6 +38,7 @@ function storedObject(key) {
 }
 const state = { topic: 'all', items: [], saved: storedSet('interessefeed:saved'), seen: storedSet('interessefeed:seen'), feedback: storedObject('interessefeed:feedback'), readFilter: localStorage.getItem('interessefeed:read-filter') || 'all', lastUpdated: null, busy: false };
 let readObserver;
+let preserveSeenInUnread = false;
 const readTimers = new Map();
 const els = {
   topicNavigation: document.querySelector('#topicNavigation'), storyList: document.querySelector('#storyList'), feedStatus: document.querySelector('#feedStatus'),
@@ -129,7 +130,7 @@ function renderStories() {
   const isSavedView = state.topic === 'saved';
   let items = isSavedView ? state.items.filter((item) => state.saved.has(item.link)) : state.topic === 'all' ? state.items : state.items.filter((item) => item.topicId === state.topic || item.topicIds?.includes(state.topic));
   if (state.readFilter === 'read') items = items.filter((item) => state.seen.has(item.link));
-  if (state.readFilter === 'unread') items = items.filter((item) => !state.seen.has(item.link));
+  if (state.readFilter === 'unread' && !preserveSeenInUnread) items = items.filter((item) => !state.seen.has(item.link));
   if (state.topic === 'surprise') items = items.slice(0, 2);
   if (els.sortSelect.value === 'oldest') items = [...items].reverse();
   if (els.sortSelect.value === 'biggest-unseen') {
@@ -223,12 +224,27 @@ function markSeen(link) {
   if (state.seen.has(link)) return;
   state.seen.add(link);
   localStorage.setItem('interessefeed:seen', JSON.stringify([...state.seen]));
-  window.setTimeout(renderStories, 0);
+  updateReadPresentation(link);
+  if (state.readFilter !== 'unread') window.setTimeout(renderStories, 0);
 }
 function toggleSeen(link) {
   if (state.seen.has(link)) state.seen.delete(link); else state.seen.add(link);
   localStorage.setItem('interessefeed:seen', JSON.stringify([...state.seen]));
-  renderStories();
+  updateReadPresentation(link);
+  if (state.readFilter !== 'unread') renderStories();
+}
+function updateReadPresentation(link) {
+  const isSeen = state.seen.has(link);
+  document.querySelectorAll('.story-card[data-story-link]').forEach((card) => {
+    if (card.dataset.storyLink !== link) return;
+    card.classList.toggle('seen', isSeen);
+    const button = card.querySelector('[data-seen]');
+    if (!button) return;
+    button.classList.toggle('is-seen', isSeen);
+    button.textContent = isSeen ? '✓ Læst' : '○ Ulæst';
+    button.setAttribute('aria-label', isSeen ? 'Markér som ulæst' : 'Markér som læst');
+    button.title = isSeen ? 'Markér som ulæst' : 'Markér som læst';
+  });
 }
 function toggleFeedback(link, vote) {
   if (state.feedback[link] === vote) delete state.feedback[link]; else state.feedback[link] = vote;
@@ -282,7 +298,9 @@ async function refresh() {
     els.feedStatus.textContent = `${state.items.length} historier på tværs af ${topics.length} emner`;
     els.lastUpdated.textContent = `Opdateret ${new Intl.DateTimeFormat('da-DK', { hour: '2-digit', minute: '2-digit' }).format(state.lastUpdated)}`;
     if (customTopics.length) notify('Dine egne emner vises først, når de kan AI-behandles.');
+    preserveSeenInUnread = false;
     renderStories();
+    preserveSeenInUnread = state.readFilter === 'unread';
   } catch (error) {
     els.feedStatus.textContent = 'Kunne ikke hente historier';
     els.lastUpdated.textContent = 'Tjek din forbindelse, og prøv igen.';
@@ -308,8 +326,10 @@ els.readFilter.value = ['all', 'read', 'unread'].includes(state.readFilter) ? st
 state.readFilter = els.readFilter.value;
 els.readFilter.addEventListener('change', () => {
   state.readFilter = els.readFilter.value;
+  preserveSeenInUnread = false;
   localStorage.setItem('interessefeed:read-filter', state.readFilter);
   renderStories();
+  preserveSeenInUnread = state.readFilter === 'unread';
 });
 document.querySelector('#menuToggle').addEventListener('click', () => els.sidebar.classList.toggle('open'));
 document.querySelector('#addTopicButton').addEventListener('click', () => { els.topicDialog.showModal(); window.setTimeout(() => els.topicName.focus(), 0); });
