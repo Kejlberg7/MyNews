@@ -7,6 +7,7 @@ const MAX_PER_TOPIC = 6;
 const MAX_EXISTING_HEADLINES = 220;
 const MAX_DURATION_SECONDS = 240;
 const AI_BATCH_SIZE = 18;
+const MAX_IMAGE_BACKFILL = 24;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -222,7 +223,7 @@ export default {
       const sql = neon(process.env.DATABASE_URL);
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 45_000, maxRetries: 0 });
       await ensureSchema(sql);
-      const existing = await sql`SELECT story_id, title, source FROM news_stories WHERE published_at > now() - interval '45 days' ORDER BY published_at DESC LIMIT ${MAX_EXISTING_HEADLINES}`;
+      const existing = await sql`SELECT story_id, canonical_url, title, source, source_url, image_url FROM news_stories WHERE published_at > now() - interval '45 days' ORDER BY published_at DESC LIMIT ${MAX_EXISTING_HEADLINES}`;
       const feeds = await Promise.allSettled(TOPICS.map((topic) => fetchTopic(topic, { limit: 50 })));
       const rssItems = feeds.flatMap((result, index) => result.status === 'fulfilled' ? result.value.slice(0, MAX_PER_TOPIC) : []);
       const candidates = consolidate(rssItems);
@@ -230,14 +231,27 @@ export default {
 
       const resolvedCandidates = await resolveGoogleNewsUrls(candidates);
       const withArticleText = await withConcurrency(resolvedCandidates, 12, fetchArticle);
-      const imageUpdates = withArticleText
+      const missingImageStories = existing
+        .filter((story) => !story.image_url || story.image_url === story.canonical_url)
+        .slice(0, MAX_IMAGE_BACKFILL)
+        .map((story) => ({
+          storyId: story.story_id,
+          link: story.canonical_url,
+          title: story.title,
+          source: story.source,
+          sourceUrl: story.source_url,
+          imageUrl: '',
+        }));
+      const backfillCandidates = await resolveGoogleNewsUrls(missingImageStories);
+      const backfilledImages = await withConcurrency(backfillCandidates, 8, fetchArticle);
+      const imageUpdates = [...withArticleText, ...backfilledImages]
         .filter((item) => item.imageUrl && item.imageUrl !== item.link)
-        .map((item) => ({ canonical_url: item.link, image_url: item.imageUrl }));
+        .map((item) => ({ story_id: item.storyId || hash(normalizeUrl(item.link)), image_url: item.imageUrl }));
       const refreshedImages = imageUpdates.length
         ? await sql`UPDATE news_stories AS stories SET image_url = updates.image_url
-          FROM jsonb_to_recordset(${JSON.stringify(imageUpdates)}::jsonb) AS updates(canonical_url text, image_url text)
-          WHERE stories.canonical_url = updates.canonical_url
-          RETURNING stories.canonical_url`
+          FROM jsonb_to_recordset(${JSON.stringify(imageUpdates)}::jsonb) AS updates(story_id text, image_url text)
+          WHERE stories.story_id = updates.story_id
+          RETURNING stories.story_id`
         : [];
       const reviewed = await summarizeAndFilter(openai, withArticleText, existing);
       const stored = reviewed.map((item) => {
