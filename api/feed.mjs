@@ -51,20 +51,6 @@ export default {
 
     try {
       const sql = neon(databaseUrl);
-      await sql`CREATE TABLE IF NOT EXISTS news_stories (
-        story_id text PRIMARY KEY,
-        canonical_url text NOT NULL UNIQUE,
-        title text NOT NULL,
-        summary text NOT NULL,
-        source text NOT NULL DEFAULT 'Nyhedskilde',
-        source_url text NOT NULL DEFAULT '',
-        image_url text NOT NULL DEFAULT '',
-        published_at timestamptz,
-        topic_id text NOT NULL,
-        topic_label text NOT NULL,
-        topic_ids text[] NOT NULL DEFAULT '{}',
-        processed_at timestamptz NOT NULL DEFAULT now()
-      )`;
       const rows = await sql`SELECT story_id, canonical_url, title, summary, source, source_url, image_url, published_at, topic_id, topic_label, topic_ids, processed_at FROM news_stories WHERE published_at > now() - interval '45 days' ORDER BY published_at DESC NULLS LAST LIMIT 250`;
       if (!rows.length) return fetchLive(selected);
       const selectedIds = new Set(selected.map((topic) => topic.id));
