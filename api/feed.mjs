@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import { fetchTopic, TOPICS } from '../lib/news.mjs';
+import { fetchTopic, TOPICS, validImageUrl } from '../lib/news.mjs';
 
 const CACHE_MS = 5 * 60 * 1000;
 const memoryCache = new Map();
@@ -62,7 +62,7 @@ export default {
         link: row.canonical_url,
         source: row.source,
         sourceUrl: row.source_url,
-        imageUrl: row.image_url,
+        imageUrl: validImageUrl(row.image_url, row.canonical_url),
         publishedAt: row.published_at ? new Date(row.published_at).toISOString() : null,
         topicId: row.topic_id,
         topicLabel: row.topic_label,

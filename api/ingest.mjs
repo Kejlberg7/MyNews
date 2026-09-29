@@ -169,6 +169,15 @@ export default {
       if (!candidates.length) return json({ ok: true, fetched: 0, published: 0, errors: feeds.filter((result) => result.status === 'rejected').length, durationMs: Date.now() - startedAt });
 
       const withArticleText = await withConcurrency(candidates, 12, fetchArticle);
+      const imageUpdates = withArticleText
+        .filter((item) => item.imageUrl && item.imageUrl !== item.link)
+        .map((item) => ({ canonical_url: item.link, image_url: item.imageUrl }));
+      const refreshedImages = imageUpdates.length
+        ? await sql`UPDATE news_stories AS stories SET image_url = updates.image_url
+          FROM jsonb_to_recordset(${JSON.stringify(imageUpdates)}::jsonb) AS updates(canonical_url text, image_url text)
+          WHERE stories.canonical_url = updates.canonical_url
+          RETURNING stories.canonical_url`
+        : [];
       const reviewed = await summarizeAndFilter(openai, withArticleText, existing);
       const stored = reviewed.map((item) => {
         const primaryTopic = TOPICS.find((topic) => topic.id === item.topicId) || TOPICS[0];
@@ -212,6 +221,7 @@ export default {
         uniqueCandidates: candidates.length,
         published: stored.length,
         filtered: candidates.length - stored.length,
+        imagesUpdated: refreshedImages.length,
         feedErrors: feeds.filter((result) => result.status === 'rejected').length,
         durationMs: Date.now() - startedAt,
       });
