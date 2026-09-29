@@ -1,6 +1,13 @@
 # MyNews
 
-Et personligt nyhedsfeed, der samler dine interesser uden sociale mediers feed-algoritmer. Historier hentes fra Google News RSS; lokale historier søges på dansk, mens de øvrige feeds primært er engelske. Brugerfladen er dansk, og gemte historier opbevares lokalt i browseren.
+Et personligt nyhedsfeed, der samler dine interesser uden sociale mediers feed-algoritmer. Historier hentes fra Google News RSS; lokale historier søges på dansk, mens de øvrige feeds primært er engelske. Brugerfladen er dansk, og gemte artikler opbevares lokalt i browseren.
+
+## Funktioner
+
+- Artikler vises som større, læsevenlige opslag med billede, kilde, opsummering og direkte link til udgiveren.
+- To gange dagligt henter en automatiseret proces nyheder, sorterer svage og gentagne historier fra, laver en dansk opsummering med OpenAI og gemmer de unikke historier i Neon.
+- Unikke historier vises fra databasen. Hvis database eller AI endnu ikke er tilsluttet, falder feedet tilbage til de åbne RSS-feeds.
+- Gemte historier og egne emner bliver på den enkelte browser.
 
 ## Kør lokalt
 
@@ -11,13 +18,18 @@ npm start
 
 Åbn `http://localhost:4173`.
 
-## Deploy til Vercel + Neon
+## Produktionsopsætning
 
-1. Importér `Kejlberg7/MyNews` i Vercel, eller kør `npx vercel` i repoet.
-2. Tilføj en Neon-database til Vercel-projektet i Vercel Marketplace. Forbind `DATABASE_URL` til Production (og Preview hvis ønsket).
-3. Deploy. Funktionen opretter automatisk tabellen `news_feed_cache` ved første kald.
+Vercel-projektet bruger Hobby-planen, som kun tillader én Vercel-cron om dagen. Derfor kalder et GitHub Actions-workflow den beskyttede Vercel-funktion to gange dagligt (05:17 og 17:17 UTC). GitHub kan starte planlagte workflows lidt senere ved høj belastning.
 
-Feedets RSS-resultater caches i Neon i fem minutter, så gentagne besøg ikke henter de samme feeds fra kilden. Hvis et feed midlertidigt fejler, vises den senest gemte version. Gemte artikler er kun på den enkelte browser.
+Sæt disse værdier, før den første AI-opdatering:
+
+1. Forbind Neon med Vercel, så projektet får `DATABASE_URL` i Production.
+2. Tilføj `OPENAI_API_KEY` som en hemmelig Production-miljøvariabel i Vercel.
+3. Opret en tilfældig hemmelig værdi på mindst 32 tegn. Sæt den som `CRON_SECRET` i Vercel Production og som `MYNEWS_CRON_SECRET` under GitHub-repoets Actions secrets. De to værdier skal være identiske.
+4. Deploy `main`. Workflowet kan også startes manuelt fra GitHub Actions.
+
+API-nøgler må ikke lægges i kildekoden eller `.env.example`. Funktionen opretter automatisk `news_stories` i Neon ved første kørsel og gemmer ikke selve artikelteksten, kun titel, kort opsummering, kilde, billede, link og emner.
 
 ## Emner
 

@@ -5,6 +5,9 @@
   "functions": {
     "api/feed.mjs": {
       "maxDuration": 30
+    },
+    "api/ingest.mjs": {
+      "maxDuration": 240
     }
   }
 }

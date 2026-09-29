@@ -123,12 +123,23 @@ function renderStories() {
     const safeLink = validLink(item.link);
     const source = item.source || 'Nyhedskilde';
     const isSeen = state.seen.has(item.link);
+    const imageUrl = item.imageUrl ? validLink(item.imageUrl) : '';
+    const summary = item.summary || item.description || '';
+    const sourceInitial = [...source.trim()][0]?.toLocaleUpperCase('da') || 'N';
     return `<article class="story-card ${isSeen ? 'seen' : ''}">
-      <div class="story-top"><span class="topic-pill">${escapeHtml(topic?.label || item.topicLabel || 'Nyt')}</span><span class="story-time">${escapeHtml(relativeTime(item.publishedAt))}</span></div>
-      <h3>${escapeHtml(item.title)}</h3>
-      ${item.description ? `<p class="description">${escapeHtml(item.description)}</p>` : ''}
-      <div class="story-bottom"><div class="source-line"><span class="source-dot"></span><span class="source-name">${escapeHtml(source)}</span></div>
-        <div class="story-actions">${isSeen ? '<span class="seen-label">Set</span>' : ''}<button class="save-button ${state.saved.has(item.link) ? 'saved' : ''}" data-save="${escapeHtml(item.link)}" aria-label="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}" title="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}">${state.saved.has(item.link) ? '★' : '☆'}</button><a class="open-link" data-open="${escapeHtml(item.link)}" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer" aria-label="Åbn artiklen hos ${escapeHtml(source)}" title="Åbn artikel">↗</a></div>
+      <div class="post-head">
+        <span class="post-avatar" aria-hidden="true">${escapeHtml(sourceInitial)}</span>
+        <div class="post-byline"><strong>${escapeHtml(source)}</strong><span>${escapeHtml(topic?.label || item.topicLabel || 'Nyt')}</span></div>
+        <time class="story-time" datetime="${escapeHtml(item.publishedAt || '')}">${escapeHtml(relativeTime(item.publishedAt))}</time>
+      </div>
+      ${imageUrl ? `<div class="post-image"><img src="${escapeHtml(imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" /></div>` : `<div class="post-placeholder"><span>${escapeHtml(topic?.label || item.topicLabel || 'NYT')}</span><strong>ET OVERBLIK<br />UDEN STØJ</strong><i aria-hidden="true">✳</i></div>`}
+      <div class="post-body">
+        <h3>${escapeHtml(item.title)}</h3>
+        ${summary ? `<p class="description">${escapeHtml(summary)}</p>` : ''}
+        <div class="post-footer">
+          <div class="source-line">${isSeen ? '<span class="seen-label">Set</span>' : ''}<span class="source-dot"></span><span class="source-name">${escapeHtml(source)}</span></div>
+          <div class="post-actions"><button class="save-button ${state.saved.has(item.link) ? 'saved' : ''}" data-save="${escapeHtml(item.link)}" aria-label="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}" title="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}">${state.saved.has(item.link) ? '★' : '☆'}</button><a class="read-article" data-open="${escapeHtml(item.link)}" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Læs hele artiklen <span aria-hidden="true">↗</span></a></div>
+        </div>
       </div></article>`;
   }).join('');
   document.querySelectorAll('[data-save]').forEach((button) => button.addEventListener('click', () => toggleSaved(button.dataset.save)));
