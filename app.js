@@ -37,6 +37,8 @@ function storedObject(key) {
   } catch { return {}; }
 }
 const state = { topic: 'all', items: [], saved: storedSet('interessefeed:saved'), seen: storedSet('interessefeed:seen'), feedback: storedObject('interessefeed:feedback'), readFilter: localStorage.getItem('interessefeed:read-filter') || 'all', lastUpdated: null, busy: false };
+let readObserver;
+const readTimers = new Map();
 const els = {
   topicNavigation: document.querySelector('#topicNavigation'), storyList: document.querySelector('#storyList'), feedStatus: document.querySelector('#feedStatus'),
   emptyState: document.querySelector('#emptyState'), currentTopic: document.querySelector('#currentTopic'), pageTitle: document.querySelector('#pageTitle'),
@@ -149,7 +151,7 @@ function renderStories() {
     const imageUrl = item.imageUrl ? validLink(item.imageUrl) : '';
     const summary = item.summary.trim();
     const sourceInitial = [...source.trim()][0]?.toLocaleUpperCase('da') || 'N';
-    return `<article class="story-card ${isSeen ? 'seen' : ''}">
+    return `<article class="story-card ${isSeen ? 'seen' : ''}" data-story-link="${escapeHtml(item.link)}">
       <div class="post-head">
         <span class="post-avatar" aria-hidden="true">${escapeHtml(sourceInitial)}</span>
         <div class="post-byline"><strong>${escapeHtml(source)}</strong><span>${escapeHtml(topicLabel)}</span></div>
@@ -175,11 +177,48 @@ function renderStories() {
   document.querySelectorAll('[data-vote]').forEach((button) => button.addEventListener('click', () => toggleFeedback(button.dataset.link, button.dataset.vote)));
   document.querySelectorAll('[data-seen]').forEach((button) => button.addEventListener('click', () => toggleSeen(button.dataset.seen)));
   document.querySelectorAll('[data-open]').forEach((link) => link.addEventListener('click', () => markSeen(link.dataset.open)));
+  startReadTracking();
   els.emptyState.classList.toggle('hidden', items.length > 0);
   els.storyList.classList.toggle('hidden', items.length === 0);
   document.querySelector('#emptyTitle').textContent = isSavedView ? 'Ingen gemte historier endnu' : 'Her er roligt lige nu';
   document.querySelector('#emptyText').textContent = isSavedView ? 'Tryk på stjernen ved en artikel, hvis du vil læse den senere.' : 'Der er ikke noget nyt at vise. Prøv igen lidt senere.';
 }
+function startReadTracking() {
+  readObserver?.disconnect();
+  for (const timer of readTimers.values()) window.clearTimeout(timer);
+  readTimers.clear();
+  if (!('IntersectionObserver' in window) || document.visibilityState !== 'visible') return;
+  readObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const card = entry.target;
+      const link = card.dataset.storyLink;
+      const cardHeight = card.getBoundingClientRect().height;
+      const visibleEnough = entry.isIntersecting
+        && entry.intersectionRect.height >= Math.min(cardHeight * 0.3, window.innerHeight * 0.4);
+      if (!visibleEnough || !link || state.seen.has(link)) {
+        window.clearTimeout(readTimers.get(card));
+        readTimers.delete(card);
+        continue;
+      }
+      if (readTimers.has(card)) continue;
+      const timer = window.setTimeout(() => {
+        readTimers.delete(card);
+        if (document.visibilityState === 'visible' && card.isConnected && !state.seen.has(link)) markSeen(link);
+      }, 2200);
+      readTimers.set(card, timer);
+    }
+  }, { threshold: [0, 0.2, 0.3, 0.4, 0.6] });
+  document.querySelectorAll('.story-card[data-story-link]').forEach((card) => readObserver.observe(card));
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') {
+    readObserver?.disconnect();
+    for (const timer of readTimers.values()) window.clearTimeout(timer);
+    readTimers.clear();
+  } else {
+    startReadTracking();
+  }
+});
 function markSeen(link) {
   if (state.seen.has(link)) return;
   state.seen.add(link);
