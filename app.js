@@ -37,6 +37,15 @@ const els = {
   toast: document.querySelector('#toast'), sidebar: document.querySelector('#sidebar'), themeToggle: document.querySelector('#themeToggle'),
   topicDialog: document.querySelector('#topicDialog'), topicForm: document.querySelector('#topicForm'), topicName: document.querySelector('#topicName'),
 };
+els.storyList.addEventListener('error', (event) => {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement) || !image.matches('[data-story-image]')) return;
+  const container = image.closest('.post-image');
+  const fallback = container?.querySelector('.post-image-fallback');
+  if (!container || !fallback) return;
+  fallback.hidden = false;
+  container.replaceWith(fallback);
+}, true);
 
 function applyTheme(theme, persist = true) {
   document.documentElement.dataset.theme = theme;
@@ -122,6 +131,7 @@ function renderStories() {
     const topic = topicFor(item.topicId);
     const safeLink = validLink(item.link);
     const source = item.source || 'Nyhedskilde';
+    const topicLabel = topic?.label || item.topicLabel || 'Nyt';
     const isSeen = state.seen.has(item.link);
     const imageUrl = item.imageUrl ? validLink(item.imageUrl) : '';
     const summary = item.summary || item.description || '';
@@ -129,10 +139,10 @@ function renderStories() {
     return `<article class="story-card ${isSeen ? 'seen' : ''}">
       <div class="post-head">
         <span class="post-avatar" aria-hidden="true">${escapeHtml(sourceInitial)}</span>
-        <div class="post-byline"><strong>${escapeHtml(source)}</strong><span>${escapeHtml(topic?.label || item.topicLabel || 'Nyt')}</span></div>
+        <div class="post-byline"><strong>${escapeHtml(source)}</strong><span>${escapeHtml(topicLabel)}</span></div>
         <time class="story-time" datetime="${escapeHtml(item.publishedAt || '')}">${escapeHtml(relativeTime(item.publishedAt))}</time>
       </div>
-      ${imageUrl ? `<div class="post-image"><img src="${escapeHtml(imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" /></div>` : `<div class="post-placeholder"><span>${escapeHtml(topic?.label || item.topicLabel || 'NYT')}</span><strong>ET OVERBLIK<br />UDEN STØJ</strong><i aria-hidden="true">✳</i></div>`}
+      ${imageUrl ? `<div class="post-image"><img data-story-image src="${escapeHtml(imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" /><div class="post-image-fallback post-placeholder" hidden><span>${escapeHtml(topicLabel)}</span><strong>ET OVERBLIK<br />UDEN STØJ</strong><i aria-hidden="true">✳</i></div></div>` : `<div class="post-placeholder"><span>${escapeHtml(topicLabel)}</span><strong>ET OVERBLIK<br />UDEN STØJ</strong><i aria-hidden="true">✳</i></div>`}
       <div class="post-body">
         <h3>${escapeHtml(item.title)}</h3>
         ${summary ? `<p class="description">${escapeHtml(summary)}</p>` : ''}
