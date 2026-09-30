@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 import { neon } from '@neondatabase/serverless';
 import { fetchArticle, fetchTopic, normalizeUrl, titleSimilarity, TOPICS } from '../lib/news.mjs';
 
-const MAX_PER_TOPIC = 6;
+const MAX_PER_TOPIC = 9;
 const MAX_EXISTING_HEADLINES = 220;
 const MAX_DURATION_SECONDS = 240;
 const AI_BATCH_SIZE = 18;
@@ -153,6 +153,8 @@ async function summarizeAndFilter(openai, candidates, existing) {
 Vælg konkrete, relevante nyheder med reel information. Kassér reklamer, pressemeddelelser uden nyhedsværdi, clickbait, løse rygter, trivielle opdateringer, rene kampreferater uden særlig betydning og artikler, der blot gentager en historie, som allerede findes i alreadyPublished. Hvis en ny artikel er samme hændelse som en eksisterende, skal keep være false, medmindre den skal tilføjes som relevant Verden- eller Overraskelses-historie. Når kandidater overlapper, behold kun den mest informative og troværdige.
 
 For emnet Verden skal du prioritere større internationale udviklinger inden for konflikt og diplomati, valg, økonomi, klima, katastrofer, sundhed og teknologi med bred samfundsmæssig betydning. Hvis mindst to forskellige kandidater giver konkrete oplysninger om aktuelle internationale forhold, skal du beholde de to vigtigste. En historie, som allerede vises under et andet emne, må gerne også høre til Verden.
+
+For emnet Danmark skal du prioritere landsdækkende historier med betydning for samfundet, politik, økonomi, sundhed, klima, sikkerhed, uddannelse og større danske begivenheder. Frasortér små lokale historier, som hører bedre til under Lokalt.
 
 For emnet Overraskelser skal du prioritere veldokumenterede opdagelser, forskning, natur, historie, kultur og uventede udviklinger, der kan åbne et nyt interesseområde. Hvis mindst to forskellige kandidater har konkrete, troværdige oplysninger, skal du beholde de to mest interessante. Behold kun artikler med konkrete oplysninger.
 
