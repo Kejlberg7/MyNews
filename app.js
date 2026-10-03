@@ -42,7 +42,7 @@ let readObserver;
 let preserveSeenInUnread = false;
 const readTimers = new Map();
 const els = {
-  topicNavigation: document.querySelector('#topicNavigation'), storyList: document.querySelector('#storyList'), feedStatus: document.querySelector('#feedStatus'),
+  topicNavigation: document.querySelector('#topicNavigation'), quickTopics: document.querySelector('#quickTopics'), storyList: document.querySelector('#storyList'), feedStatus: document.querySelector('#feedStatus'),
   emptyState: document.querySelector('#emptyState'), currentTopic: document.querySelector('#currentTopic'), pageTitle: document.querySelector('#pageTitle'),
   pageDescription: document.querySelector('#pageDescription'), sectionTitle: document.querySelector('#sectionTitle'), totalCount: document.querySelector('#totalCount'),
   lastUpdated: document.querySelector('#lastUpdated'), refreshButton: document.querySelector('#refreshButton'), sortSelect: document.querySelector('#sortSelect'),
@@ -96,12 +96,20 @@ function renderTopics() {
     <button class="nav-item ${state.topic === id ? 'active' : ''}" data-topic="${id}">
       <span class="topic-emoji">${icon}</span><span class="topic-name">${escapeHtml(label)}</span>${id.startsWith('custom-') ? `<span class="remove-topic" data-remove-topic="${id}" role="button" tabindex="0" aria-label="Stop med at følge ${escapeHtml(label)}" title="Stop med at følge">×</span>` : ''}
     </button>`).join('');
+  renderQuickTopics();
   document.querySelectorAll('[data-topic]').forEach((button) => button.addEventListener('click', () => selectTopic(button.dataset.topic)));
   document.querySelectorAll('[data-remove-topic]').forEach((button) => {
     const remove = (event) => { event.stopPropagation(); removeTopic(button.dataset.removeTopic); };
     button.addEventListener('click', remove);
     button.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') remove(event); });
   });
+}
+function renderQuickTopics() {
+  const quickTopics = [{ id: 'all', label: 'Til dig', icon: '✦' }, ...topics];
+  els.quickTopics.innerHTML = quickTopics.map(({ id, label, icon }) => `
+    <button class="topic-chip ${state.topic === id ? 'active' : ''}" data-quick-topic="${escapeHtml(id)}" aria-pressed="${state.topic === id}">
+      <span aria-hidden="true">${escapeHtml(icon)}</span>${escapeHtml(label)}
+    </button>`).join('');
 }
 function saveCustomTopics() {
   localStorage.setItem('interessefeed:topics', JSON.stringify(topics.filter((topic) => topic.id.startsWith('custom-'))));
@@ -126,13 +134,50 @@ function removeTopic(id) {
   renderTopics(); renderStories();
   notify(`Du følger ikke længere ${removed.label}`);
 }
+function personalizedOrder(items) {
+  const signals = new Map();
+  for (const story of state.items) {
+    const vote = state.feedback[story.link];
+    if (!vote) continue;
+    const value = vote === 'like' ? 1 : -1.3;
+    for (const topicId of story.topicIds || [story.topicId]) {
+      const current = signals.get(topicId) || { value: 0, count: 0 };
+      current.value += value;
+      current.count += 1;
+      signals.set(topicId, current);
+    }
+  }
+  const affinity = (topicId) => {
+    const signal = signals.get(topicId);
+    return signal ? Math.max(-1.5, Math.min(1.5, signal.value / Math.sqrt(signal.count))) : 0;
+  };
+  const ranked = items.map((item) => {
+    const ageHours = Math.max(0, (Date.now() - Date.parse(item.publishedAt || 0)) / 3_600_000);
+    const tags = item.topicIds?.length ? item.topicIds : [item.topicId];
+    const preferences = tags.map(affinity);
+    const topicAffinity = Math.max(0, ...preferences) * 0.75 + Math.min(0, ...preferences) * 0.4;
+    const directVote = state.feedback[item.link] === 'like' ? 1.5 : state.feedback[item.link] === 'dislike' ? -2 : 0;
+    const score = Math.max(0, 1 - ageHours / 168) + (state.seen.has(item.link) ? 0 : 0.35) + topicAffinity + directVote;
+    return { item, score, publishedAt: Date.parse(item.publishedAt || 0) };
+  }).sort((a, b) => b.score - a.score || b.publishedAt - a.publishedAt);
+
+  const ordered = [];
+  while (ranked.length) {
+    const recentTopics = new Set(ordered.slice(-2).map(({ item }) => item.topicId));
+    const next = ranked.findIndex(({ item }) => !recentTopics.has(item.topicId));
+    ordered.push(ranked.splice(next < 0 ? 0 : next, 1)[0]);
+  }
+  return ordered.map(({ item }) => item);
+}
 function renderStories() {
   state.items = state.items.filter((item) => typeof item.summary === 'string' && item.summary.trim());
+  if (state.topic === 'all') els.sectionTitle.textContent = els.sortSelect.value === 'for-you' ? 'Udvalgt til dig' : 'Seneste historier';
   const isSavedView = state.topic === 'saved';
   let items = isSavedView ? state.items.filter((item) => state.saved.has(item.link)) : state.topic === 'all' ? state.items : state.items.filter((item) => item.topicId === state.topic || item.topicIds?.includes(state.topic));
   if (state.readFilter === 'read') items = items.filter((item) => state.seen.has(item.link));
   if (state.readFilter === 'unread' && !preserveSeenInUnread) items = items.filter((item) => !state.seen.has(item.link));
   if (state.topic === 'surprise') items = items.slice(0, 2);
+  if (els.sortSelect.value === 'for-you') items = personalizedOrder(items);
   if (els.sortSelect.value === 'oldest') items = [...items].reverse();
   if (els.sortSelect.value === 'biggest-unseen') {
     items = [...items].sort((a, b) => {
@@ -269,6 +314,7 @@ function renderHeader() {
 function selectTopic(id) {
   state.topic = id;
   document.querySelectorAll('.navigation [data-topic]').forEach((button) => button.classList.toggle('active', button.dataset.topic === id));
+  renderQuickTopics();
   renderHeader(); renderStories();
   els.sidebar.classList.remove('open');
 }
@@ -315,6 +361,10 @@ async function refresh() {
 }
 
 document.querySelectorAll('.navigation [data-topic]').forEach((button) => button.addEventListener('click', () => selectTopic(button.dataset.topic)));
+els.quickTopics.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-quick-topic]');
+  if (button) selectTopic(button.dataset.quickTopic);
+});
 renderTopics();
 document.querySelector('#todayLabel').textContent = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
 document.querySelector('#dateLine').textContent = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()).toUpperCase();

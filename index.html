@@ -53,8 +53,10 @@
 
         <section class="feed-heading">
           <div><div class="feed-kicker"><span class="live-indicator"></span> LØBENDE OVERBLIK</div><h2 id="sectionTitle">Seneste historier</h2></div>
-          <div class="feed-tools"><label for="readFilter">Vis</label><select id="readFilter" aria-label="Filtrér efter læsestatus" title="Markeres automatisk som læst, når en historie er synlig på skærmen i 10 sekunder."><option value="all">Alle historier</option><option value="unread">Ulæste</option><option value="read">Læste</option></select><label class="sort-label" for="sortSelect">Sortér</label><select id="sortSelect"><option value="newest">Nyeste først</option><option value="biggest-unseen">Største, du ikke har set</option><option value="oldest">Ældste først</option></select></div>
+          <div class="feed-tools"><label for="readFilter">Vis</label><select id="readFilter" aria-label="Filtrér efter læsestatus" title="Markeres automatisk som læst, når en historie er synlig på skærmen i 10 sekunder."><option value="all">Alle historier</option><option value="unread">Ulæste</option><option value="read">Læste</option></select><label class="sort-label" for="sortSelect">Sortér</label><select id="sortSelect"><option value="for-you">Til dig</option><option value="newest">Seneste</option><option value="biggest-unseen">Ulæste først</option><option value="oldest">Ældste først</option></select></div>
         </section>
+
+        <nav class="quick-topics" id="quickTopics" aria-label="Gå til et emne"></nav>
 
         <div class="feed-meta"><span id="feedStatus">Henter historier …</span><span id="lastUpdated"></span></div>
         <section class="story-list" id="storyList" aria-live="polite"></section>

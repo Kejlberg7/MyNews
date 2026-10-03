@@ -1,6 +1,8 @@
 import { neon } from '@neondatabase/serverless';
 import { TOPICS, validImageUrl } from '../lib/news.mjs';
 
+const DAILY_DISCOVERY_LIMITS = { world: 2, denmark: 4, surprise: 2 };
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -14,6 +16,33 @@ function resultResponse(results) {
   items.sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0));
   const errors = results.filter((result) => result.error).length;
   return json({ items, updatedAt: new Date().toISOString(), errors });
+}
+
+function limitDailyDiscoveryStories(items, requested) {
+  const topicCounts = new Map();
+  const totals = new Map();
+  const localDay = (value) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Copenhagen', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date(value));
+    const values = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+    return `${values.year}-${values.month}-${values.day}`;
+  };
+  return items.filter((item) => {
+    const isDiscoveryFilter = Object.prototype.hasOwnProperty.call(DAILY_DISCOVERY_LIMITS, requested);
+    const discoveryTopic = requested
+      ? isDiscoveryFilter && item.topicIds?.includes(requested) ? requested : null
+      : item.topicId;
+    if (!Object.prototype.hasOwnProperty.call(DAILY_DISCOVERY_LIMITS, discoveryTopic)) return true;
+    const day = localDay(item.publishedAt || Date.now());
+    const key = `${day}:${discoveryTopic}`;
+    const topicCount = topicCounts.get(key) || 0;
+    const total = totals.get(day) || 0;
+    if (topicCount >= DAILY_DISCOVERY_LIMITS[discoveryTopic] || total >= 8) return false;
+    topicCounts.set(key, topicCount + 1);
+    totals.set(day, total + 1);
+    return true;
+  });
 }
 
 export default {
@@ -53,7 +82,7 @@ export default {
         processedAt: row.processed_at ? new Date(row.processed_at).toISOString() : null,
       })).filter((item) => typeof item.summary === 'string' && item.summary.trim())
         .filter((item) => !requested || item.topicIds.includes(requested) || item.topicId === requested);
-      return resultResponse([{ items, error: false }]);
+      return resultResponse([{ items: limitDailyDiscoveryStories(items, requested), error: false }]);
     } catch (error) {
       console.error('Database-read fejl:', error);
       return json({ error: 'Nyhederne kunne ikke hentes fra databasen.' }, 503);
