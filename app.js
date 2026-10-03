@@ -39,7 +39,9 @@ function storedObject(key) {
 }
 const state = { topic: 'all', items: [], saved: storedSet('interessefeed:saved'), seen: storedSet('interessefeed:seen'), feedback: storedObject('interessefeed:feedback'), readFilter: localStorage.getItem('interessefeed:read-filter') || 'all', lastUpdated: null, busy: false };
 let readObserver;
-let preserveSeenInUnread = false;
+let unreadSnapshot = null;
+let visibleItems = [];
+const flow = { items: [], index: 0, batchStart: 0, complete: false };
 const readTimers = new Map();
 const els = {
   topicNavigation: document.querySelector('#topicNavigation'), quickTopics: document.querySelector('#quickTopics'), storyList: document.querySelector('#storyList'), feedStatus: document.querySelector('#feedStatus'),
@@ -49,14 +51,11 @@ const els = {
   toast: document.querySelector('#toast'), sidebar: document.querySelector('#sidebar'), themeToggle: document.querySelector('#themeToggle'), readFilter: document.querySelector('#readFilter'),
   topicDialog: document.querySelector('#topicDialog'), topicForm: document.querySelector('#topicForm'), topicName: document.querySelector('#topicName'),
 };
-els.storyList.addEventListener('error', (event) => {
+document.addEventListener('error', (event) => {
   const image = event.target;
   if (!(image instanceof HTMLImageElement) || !image.matches('[data-story-image]')) return;
-  const container = image.closest('.post-image');
-  const fallback = container?.querySelector('.post-image-fallback');
-  if (!container || !fallback) return;
-  fallback.hidden = false;
-  container.replaceWith(fallback);
+  image.closest('.story-cover')?.classList.add('without-image');
+  image.remove();
 }, true);
 
 function applyTheme(theme, persist = true) {
@@ -86,10 +85,12 @@ function validLink(value) {
   try { return new URL(value).protocol === 'https:' ? value : '#'; } catch { return '#'; }
 }
 function notify(message) {
-  els.toast.textContent = message;
-  els.toast.classList.add('show');
+  const toast = document.querySelector('#flowDialog').open ? document.querySelector('#flowToast') : els.toast;
+  toast.textContent = message;
+  document.querySelectorAll('.toast').forEach((element) => element.classList.remove('show'));
+  toast.classList.add('show');
   window.clearTimeout(notify.timer);
-  notify.timer = window.setTimeout(() => els.toast.classList.remove('show'), 2300);
+  notify.timer = window.setTimeout(() => toast.classList.remove('show'), 2300);
 }
 function renderTopics() {
   els.topicNavigation.innerHTML = topics.map(({ id, label, icon }) => `
@@ -175,7 +176,10 @@ function renderStories() {
   const isSavedView = state.topic === 'saved';
   let items = isSavedView ? state.items.filter((item) => state.saved.has(item.link)) : state.topic === 'all' ? state.items : state.items.filter((item) => item.topicId === state.topic || item.topicIds?.includes(state.topic));
   if (state.readFilter === 'read') items = items.filter((item) => state.seen.has(item.link));
-  if (state.readFilter === 'unread' && !preserveSeenInUnread) items = items.filter((item) => !state.seen.has(item.link));
+  if (state.readFilter === 'unread') {
+    unreadSnapshot ??= new Set(state.items.filter((item) => !state.seen.has(item.link)).map((item) => item.link));
+    items = items.filter((item) => unreadSnapshot.has(item.link));
+  }
   if (state.topic === 'surprise') items = items.slice(0, 2);
   if (els.sortSelect.value === 'for-you') items = personalizedOrder(items);
   if (els.sortSelect.value === 'oldest') items = [...items].reverse();
@@ -188,48 +192,124 @@ function renderStories() {
     });
   }
   els.totalCount.textContent = String(state.items.length);
-  els.storyList.innerHTML = items.map((item) => {
-    const topic = topicFor(item.topicId);
-    const safeLink = validLink(item.link);
-    const source = item.source || 'Nyhedskilde';
-    const topicLabel = state.topic !== 'all' && state.topic !== 'saved' ? topic?.label || item.topicLabel || 'Nyt' : item.topicLabel || 'Nyt';
-    const isSeen = state.seen.has(item.link);
-    const vote = state.feedback[item.link] || '';
-    const imageUrl = item.imageUrl ? validLink(item.imageUrl) : '';
-    const summary = item.summary.trim();
-    const sourceInitial = [...source.trim()][0]?.toLocaleUpperCase('da') || 'N';
-    return `<article class="story-card ${isSeen ? 'seen' : ''}" data-story-link="${escapeHtml(item.link)}">
-      <div class="post-head">
-        <span class="post-avatar" aria-hidden="true">${escapeHtml(sourceInitial)}</span>
-        <div class="post-byline"><strong>${escapeHtml(source)}</strong><span>${escapeHtml(topicLabel)}</span></div>
-        <time class="story-time" datetime="${escapeHtml(item.publishedAt || '')}">${escapeHtml(relativeTime(item.publishedAt))}</time>
-      </div>
-      ${imageUrl ? `<div class="post-image"><img data-story-image src="${escapeHtml(imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" /><div class="post-image-fallback post-placeholder" hidden><span>${escapeHtml(topicLabel)}</span><strong>ET OVERBLIK<br />UDEN STØJ</strong><i aria-hidden="true">✳</i></div></div>` : `<div class="post-placeholder"><span>${escapeHtml(topicLabel)}</span><strong>ET OVERBLIK<br />UDEN STØJ</strong><i aria-hidden="true">✳</i></div>`}
-      <div class="post-body">
-        <h3>${escapeHtml(item.translatedTitle || item.title)}</h3>
-        ${summary ? `<p class="description">${escapeHtml(summary)}</p>` : ''}
-        <div class="post-footer">
-          <div class="source-line"><span class="source-dot"></span><span class="source-name">${escapeHtml(source)}</span></div>
-          <div class="post-actions">
-            <button class="feedback-button ${vote === 'like' ? 'selected' : ''}" data-vote="like" data-link="${escapeHtml(item.link)}" aria-label="${vote === 'like' ? 'Fjern like' : 'Like historien'}" aria-pressed="${vote === 'like'}" title="${vote === 'like' ? 'Du kan lide denne historie' : 'Jeg kan lide denne historie'}">👍</button>
-            <button class="feedback-button ${vote === 'dislike' ? 'selected' : ''}" data-vote="dislike" data-link="${escapeHtml(item.link)}" aria-label="${vote === 'dislike' ? 'Fjern dislike' : 'Vis færre historier som denne'}" aria-pressed="${vote === 'dislike'}" title="${vote === 'dislike' ? 'Du vil se færre historier som denne' : 'Vis færre historier som denne'}">👎</button>
-            <button class="read-state-button ${isSeen ? 'is-seen' : ''}" data-seen="${escapeHtml(item.link)}" aria-label="${isSeen ? 'Markér som ulæst' : 'Markér som læst'}" title="${isSeen ? 'Markér som ulæst' : 'Markér som læst'}">${isSeen ? '✓ Læst' : '○ Ulæst'}</button>
-            <button class="save-button ${state.saved.has(item.link) ? 'saved' : ''}" data-save="${escapeHtml(item.link)}" aria-label="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}" title="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}">${state.saved.has(item.link) ? '★' : '☆'}</button>
-            <a class="read-article" data-open="${escapeHtml(item.link)}" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Læs hele artiklen <span aria-hidden="true">↗</span></a>
-          </div>
-        </div>
-      </div></article>`;
-  }).join('');
-  document.querySelectorAll('[data-save]').forEach((button) => button.addEventListener('click', () => toggleSaved(button.dataset.save)));
-  document.querySelectorAll('[data-vote]').forEach((button) => button.addEventListener('click', () => toggleFeedback(button.dataset.link, button.dataset.vote)));
-  document.querySelectorAll('[data-seen]').forEach((button) => button.addEventListener('click', () => toggleSeen(button.dataset.seen)));
-  document.querySelectorAll('[data-open]').forEach((link) => link.addEventListener('click', () => markSeen(link.dataset.open)));
+  visibleItems = items;
+  els.storyList.innerHTML = items.map((item, index) => storyCard(item) + (index === 5 && items.length > 6 ? `<aside class="flow-invitation"><span class="invitation-icon" aria-hidden="true">↗</span><div><strong>Find dit læseflow</strong><p>Én historie ad gangen. Swipe, læs, reagér.</p></div><button data-flow-link="${escapeHtml(items[6].link)}">Prøv det <span aria-hidden="true">→</span></button></aside>` : '')).join('');
+  renderEntries();
+  updateAvailability();
   startReadTracking();
   els.emptyState.classList.toggle('hidden', items.length > 0);
   els.storyList.classList.toggle('hidden', items.length === 0);
   document.querySelector('#emptyTitle').textContent = isSavedView ? 'Ingen gemte historier endnu' : 'Her er roligt lige nu';
   document.querySelector('#emptyText').textContent = isSavedView ? 'Tryk på stjernen ved en artikel, hvis du vil læse den senere.' : 'Der er ikke noget nyt at vise. Prøv igen lidt senere.';
 }
+function readingSeconds(item) {
+  return Math.max(10, Math.round(((item.summary || '').split(/\s+/).length / 220 * 60) / 5) * 5);
+}
+function storyTone(id) {
+  if (['football', 'sport', 'premier-league', 'superliga', 'liverpool', 'fck', 'padel'].includes(id)) return 'sport';
+  if (['tech', 'gaming'].includes(id)) return 'tech';
+  if (['culture', 'surprise'].includes(id)) return 'culture';
+  return 'world';
+}
+function summaryHtml(summary) {
+  const sentences = typeof Intl.Segmenter === 'function'
+    ? [...new Intl.Segmenter('da', { granularity: 'sentence' }).segment(summary)].map((part) => part.segment)
+    : [summary];
+  const lead = sentences.shift() || '';
+  return `<p class="summary-lead">${escapeHtml(lead)}</p>${sentences.length ? `<p class="description">${escapeHtml(sentences.join(''))}</p>` : ''}`;
+}
+function storyCard(item, immersive = false) {
+  const topic = topicFor(item.topicId);
+  const safeLink = validLink(item.link);
+  const source = item.source || 'Nyhedskilde';
+  const topicLabel = topic?.label || item.topicLabel || 'Nyt';
+  const isSeen = state.seen.has(item.link);
+  const vote = state.feedback[item.link] || '';
+  const imageUrl = item.imageUrl && validLink(item.imageUrl) !== '#' ? item.imageUrl : '';
+  const sourceInitial = [...source.trim()][0]?.toLocaleUpperCase('da') || 'N';
+  return `<article class="story-card ${isSeen ? 'seen' : ''} tone-${storyTone(item.topicId)}" data-story-link="${escapeHtml(item.link)}">
+    <div class="post-head"><span class="post-avatar" aria-hidden="true">${escapeHtml(sourceInitial)}</span><div class="post-byline"><strong>${escapeHtml(source)}</strong><span>${escapeHtml(relativeTime(item.publishedAt))}</span></div><span class="reading-time">ca. ${readingSeconds(item)} sek.</span>${immersive ? '' : `<button class="open-flow" data-flow-link="${escapeHtml(item.link)}" aria-label="Åbn historien i læseflow" title="Åbn i læseflow">⤢</button>`}</div>
+    <div class="story-cover ${imageUrl ? '' : 'without-image'}">${imageUrl ? `<img data-story-image src="${escapeHtml(imageUrl)}" alt="" loading="${immersive ? 'eager' : 'lazy'}" referrerpolicy="no-referrer" />` : ''}<span class="cover-symbol" aria-hidden="true">${escapeHtml(topic?.icon || '✦')}</span><div class="cover-copy"><span class="cover-topic">${escapeHtml(topicLabel)}</span><h3>${escapeHtml(item.translatedTitle || item.title)}</h3></div></div>
+    <div class="post-body"><div class="summary-caption">HISTORIEN KORT <span>AI-opsummering</span></div>${summaryHtml(item.summary.trim())}
+        <div class="post-footer">
+          <div class="source-line"><span class="source-dot"></span><span class="source-name">${escapeHtml(source)}</span></div>
+          <div class="post-actions">
+            <button class="feedback-button ${vote === 'like' ? 'selected' : ''}" data-vote="like" data-link="${escapeHtml(item.link)}" aria-label="${vote === 'like' ? 'Fjern like' : 'Like historien'}" aria-pressed="${vote === 'like'}" title="${vote === 'like' ? 'Du kan lide denne historie' : 'Jeg kan lide denne historie'}"><span aria-hidden="true">♡</span><span>Mere som dette</span></button>
+            <button class="feedback-button ${vote === 'dislike' ? 'selected' : ''}" data-vote="dislike" data-link="${escapeHtml(item.link)}" aria-label="${vote === 'dislike' ? 'Fjern dislike' : 'Vis færre historier som denne'}" aria-pressed="${vote === 'dislike'}" title="${vote === 'dislike' ? 'Du vil se færre historier som denne' : 'Vis færre historier som denne'}"><span aria-hidden="true">↓</span><span>Mindre</span></button>
+            <button class="read-state-button ${isSeen ? 'is-seen' : ''}" data-seen="${escapeHtml(item.link)}" aria-label="${isSeen ? 'Markér som ulæst' : 'Markér som læst'}" title="${isSeen ? 'Markér som ulæst' : 'Markér som læst'}">${isSeen ? '✓ Læst' : '○ Ulæst'}</button>
+            <button class="save-button ${state.saved.has(item.link) ? 'saved' : ''}" data-save="${escapeHtml(item.link)}" aria-label="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}" title="${state.saved.has(item.link) ? 'Fjern fra gemte' : 'Gem til senere'}">${state.saved.has(item.link) ? '★' : '☆'}</button>
+            <a class="read-article" data-open="${escapeHtml(item.link)}" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Læs hele artiklen <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+    </div></article>`;
+}
+function renderEntries() {
+  const represented = new Set();
+  const entries = visibleItems.filter((item) => {
+    if (represented.has(item.topicId)) return false;
+    represented.add(item.topicId);
+    return true;
+  }).slice(0, 5);
+  document.querySelector('#entrySection').classList.toggle('hidden', entries.length < 2 || state.topic !== 'all');
+  document.querySelector('#entryRail').innerHTML = entries.map((item) => `<button class="entry-card tone-${storyTone(item.topicId)}" data-flow-link="${escapeHtml(item.link)}"><span class="entry-topic">${escapeHtml(topicFor(item.topicId)?.label || item.topicLabel)}</span><strong>${escapeHtml(item.translatedTitle || item.title)}</strong><span class="entry-bottom">${readingSeconds(item)} sek. <span aria-hidden="true">↗</span></span></button>`).join('');
+}
+function updateAvailability() {
+  const unread = visibleItems.filter((item) => !state.seen.has(item.link)).length;
+  document.querySelector('#startFlow').disabled = !visibleItems.length;
+  document.querySelector('#flowAvailability').textContent = unread ? `${unread} ulæste historier klar til dig` : visibleItems.length ? `${visibleItems.length} historier at gå på opdagelse i` : 'Ingen historier i denne visning';
+}
+function openFlow(link) {
+  if (!visibleItems.length) return;
+  flow.items = els.sortSelect.value === 'for-you' ? personalizedOrder(visibleItems) : [...visibleItems];
+  flow.index = link ? Math.max(0, flow.items.findIndex((item) => item.link === link)) : Math.max(0, flow.items.findIndex((item) => !state.seen.has(item.link)));
+  flow.batchStart = flow.index;
+  flow.complete = false;
+  document.querySelector('#flowTitle').textContent = state.topic === 'all' ? 'Dit personlige mix' : state.topic === 'saved' ? 'Gemt til senere' : topicFor(state.topic)?.label || 'Dit flow';
+  document.querySelector('#flowDialog').showModal();
+  document.body.classList.add('flow-open');
+  renderFlow();
+}
+function renderFlow() {
+  const end = Math.min(flow.batchStart + 10, flow.items.length);
+  const count = end - flow.batchStart;
+  const content = document.querySelector('#flowContent');
+  const progress = document.querySelector('#flowProgress');
+  const position = flow.complete ? count : flow.index - flow.batchStart + 1;
+  progress.innerHTML = Array.from({ length: count }, (_, index) => `<span class="${index < position ? 'filled' : ''}"></span>`).join('');
+  progress.setAttribute('aria-valuemax', count);
+  progress.setAttribute('aria-valuenow', position);
+  document.querySelector('#flowPosition').textContent = `${position} / ${count} historier`;
+  document.querySelector('#flowPrevious').disabled = flow.index === flow.batchStart && !flow.complete;
+  if (flow.complete) {
+    const read = flow.items.slice(flow.batchStart, end).filter((item) => state.seen.has(item.link)).length;
+    content.innerHTML = `<div class="flow-finish"><span aria-hidden="true">✳</span><h3>Et lille mellemrum.<br />Et større overblik.</h3><p>Du har bladret gennem ${count} historier. ${read} er markeret som læst.</p><button class="finish-close" data-close-flow>Tilbage til dit feed</button></div>`;
+    document.querySelector('#flowNextTitle').textContent = end < flow.items.length ? 'Et nyt mix venter, når du er klar' : 'Du er nået gennem denne visning';
+    document.querySelector('#flowNext').textContent = end < flow.items.length ? 'Næste 10 →' : 'Afslut ✓';
+  } else {
+    content.innerHTML = storyCard(flow.items[flow.index], true);
+    document.querySelector('#flowNextTitle').textContent = flow.index + 1 < end ? `Næste: ${topicFor(flow.items[flow.index + 1].topicId)?.label || 'Ny historie'}` : 'Sidste historie i dette mix';
+    document.querySelector('#flowNext').textContent = flow.index + 1 < end ? 'Næste →' : 'Rund af ✓';
+  }
+  content.scrollTop = 0;
+  content.focus({ preventScroll: true });
+  startReadTracking();
+}
+function nextFlow() {
+  const end = Math.min(flow.batchStart + 10, flow.items.length);
+  if (flow.complete) {
+    if (end >= flow.items.length) return document.querySelector('#flowDialog').close();
+    if (els.sortSelect.value === 'for-you') flow.items = [...flow.items.slice(0, end), ...personalizedOrder(flow.items.slice(end))];
+    flow.index = end; flow.batchStart = end; flow.complete = false;
+  } else if (flow.index + 1 >= end) { flow.complete = true; }
+  else flow.index++;
+  renderFlow();
+}
+function previousFlow() {
+  if (flow.complete) flow.complete = false;
+  else if (flow.index > flow.batchStart) flow.index--;
+  renderFlow();
+}
+
 function startReadTracking() {
   readObserver?.disconnect();
   for (const timer of readTimers.values()) window.clearTimeout(timer);
@@ -255,7 +335,8 @@ function startReadTracking() {
       readTimers.set(card, timer);
     }
   }, { threshold: [0, 0.2, 0.3, 0.4, 0.6] });
-  document.querySelectorAll('.story-card[data-story-link]').forEach((card) => readObserver.observe(card));
+  const root = document.querySelector('#flowDialog').open ? document.querySelector('#flowContent') : els.storyList;
+  root.querySelectorAll('.story-card[data-story-link]').forEach((card) => readObserver.observe(card));
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') {
@@ -271,13 +352,14 @@ function markSeen(link) {
   state.seen.add(link);
   localStorage.setItem('interessefeed:seen', JSON.stringify([...state.seen]));
   updateReadPresentation(link);
-  if (state.readFilter !== 'unread') window.setTimeout(renderStories, 0);
+  updateAvailability();
 }
 function toggleSeen(link) {
   if (state.seen.has(link)) state.seen.delete(link); else state.seen.add(link);
   localStorage.setItem('interessefeed:seen', JSON.stringify([...state.seen]));
   updateReadPresentation(link);
-  if (state.readFilter !== 'unread') renderStories();
+  updateAvailability();
+  startReadTracking();
 }
 function updateReadPresentation(link) {
   const isSeen = state.seen.has(link);
@@ -295,8 +377,8 @@ function updateReadPresentation(link) {
 function toggleFeedback(link, vote) {
   if (state.feedback[link] === vote) delete state.feedback[link]; else state.feedback[link] = vote;
   localStorage.setItem('interessefeed:feedback', JSON.stringify(state.feedback));
-  renderStories();
-  notify(vote === 'like' ? 'Tak — noteret som en historie, du kan lide.' : 'Tak — noteret, så vi senere kan justere dit udvalg.');
+  updateStoryActions(link);
+  notify(!state.feedback[link] ? 'Vurdering fjernet' : vote === 'like' ? 'Mere af det her i dit næste mix ♡' : 'Mindre af det her i dit næste mix');
 }
 function renderHeader() {
   const topic = topicFor(state.topic);
@@ -304,8 +386,8 @@ function renderHeader() {
   els.currentTopic.textContent = title;
   els.sectionTitle.textContent = state.topic === 'saved' ? 'Dine gemte historier' : state.topic === 'all' ? 'Seneste historier' : state.topic === 'world' ? 'Vigtige historier fra verden' : state.topic === 'surprise' ? 'Dagens to overraskelser' : `Seneste om ${topic?.label.toLowerCase()}`;
   if (state.topic === 'all') {
-    els.pageTitle.innerHTML = 'Gør plads til<br /><em>det, du følger.</em>';
-    els.pageDescription.textContent = 'Nyt fra dine interesser, samlet ét sted. I rækkefølge efter tid — så du selv bestemmer, hvad der er vigtigt.';
+    els.pageTitle.innerHTML = 'Følg din<br /><em>nysgerrighed.</em>';
+    els.pageDescription.textContent = 'Dine interesser. Nye perspektiver. Én god historie ad gangen.';
   } else {
     els.pageTitle.innerHTML = `${escapeHtml(title)}<br /><em>uden støjen.</em>`;
     els.pageDescription.textContent = state.topic === 'saved' ? 'Historier, du har gemt på denne enhed, klar til at vende tilbage til.' : topic?.intro || '';
@@ -313,6 +395,7 @@ function renderHeader() {
 }
 function selectTopic(id) {
   state.topic = id;
+  unreadSnapshot = null;
   document.querySelectorAll('.navigation [data-topic]').forEach((button) => button.classList.toggle('active', button.dataset.topic === id));
   renderQuickTopics();
   renderHeader(); renderStories();
@@ -321,7 +404,7 @@ function selectTopic(id) {
 function toggleSaved(link) {
   if (state.saved.has(link)) state.saved.delete(link); else state.saved.add(link);
   localStorage.setItem('interessefeed:saved', JSON.stringify([...state.saved]));
-  renderStories();
+  updateStoryActions(link);
   notify(state.saved.has(link) ? 'Gemt til senere' : 'Fjernet fra dine gemte historier');
 }
 async function refresh() {
@@ -345,9 +428,9 @@ async function refresh() {
     els.feedStatus.textContent = `${state.items.length} historier på tværs af ${topics.length} emner`;
     els.lastUpdated.textContent = `Opdateret ${new Intl.DateTimeFormat('da-DK', { hour: '2-digit', minute: '2-digit' }).format(state.lastUpdated)}`;
     if (customTopics.length) notify('Dine egne emner vises først, når de kan AI-behandles.');
-    preserveSeenInUnread = false;
+    unreadSnapshot = null;
     renderStories();
-    preserveSeenInUnread = state.readFilter === 'unread';
+
   } catch (error) {
     els.feedStatus.textContent = 'Kunne ikke hente historier';
     els.lastUpdated.textContent = 'Tjek din forbindelse, og prøv igen.';
@@ -372,15 +455,15 @@ applyTheme(document.documentElement.dataset.theme || 'light', false);
 els.themeToggle.addEventListener('click', toggleTheme);
 els.refreshButton.addEventListener('click', refresh);
 document.querySelector('#emptyRefresh').addEventListener('click', refresh);
-els.sortSelect.addEventListener('change', renderStories);
+els.sortSelect.addEventListener('change', () => { unreadSnapshot = null; renderStories(); });
 els.readFilter.value = ['all', 'read', 'unread'].includes(state.readFilter) ? state.readFilter : 'all';
 state.readFilter = els.readFilter.value;
 els.readFilter.addEventListener('change', () => {
   state.readFilter = els.readFilter.value;
-  preserveSeenInUnread = false;
+  unreadSnapshot = null;
   localStorage.setItem('interessefeed:read-filter', state.readFilter);
   renderStories();
-  preserveSeenInUnread = state.readFilter === 'unread';
+
 });
 document.querySelector('#menuToggle').addEventListener('click', () => els.sidebar.classList.toggle('open'));
 document.querySelector('#addTopicButton').addEventListener('click', () => { els.topicDialog.showModal(); window.setTimeout(() => els.topicName.focus(), 0); });
@@ -389,4 +472,57 @@ els.topicForm.addEventListener('submit', (event) => {
   event.preventDefault(); addTopic(els.topicName.value); els.topicForm.reset(); els.topicDialog.close();
 });
 document.addEventListener('click', (event) => { if (els.sidebar.classList.contains('open') && !els.sidebar.contains(event.target) && !event.target.closest('#menuToggle')) els.sidebar.classList.remove('open'); });
+function updateStoryActions(link) {
+  document.querySelectorAll('.story-card[data-story-link]').forEach((card) => {
+    if (card.dataset.storyLink !== link) return;
+    card.querySelectorAll('[data-vote]').forEach((button) => {
+      const selected = state.feedback[link] === button.dataset.vote;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-pressed', selected);
+      button.title = button.dataset.vote === 'like' ? selected ? 'Du kan lide denne historie' : 'Jeg kan lide denne historie' : selected ? 'Du vil se færre historier som denne' : 'Vis færre historier som denne';
+      button.setAttribute('aria-label', button.dataset.vote === 'like' ? selected ? 'Fjern like' : 'Like historien' : selected ? 'Fjern dislike' : 'Vis færre historier som denne');
+    });
+    const save = card.querySelector('[data-save]');
+    const saved = state.saved.has(link);
+    save.classList.toggle('saved', saved);
+    save.textContent = saved ? '★' : '☆';
+    save.setAttribute('aria-label', saved ? 'Fjern fra gemte' : 'Gem til senere');
+    save.title = saved ? 'Fjern fra gemte' : 'Gem til senere';
+  });
+}
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('button, a');
+  if (!button) return;
+  if (button.hasAttribute('data-flow-link')) openFlow(button.dataset.flowLink);
+  if (button.hasAttribute('data-close-flow')) document.querySelector('#flowDialog').close();
+  if (button.hasAttribute('data-vote')) toggleFeedback(button.dataset.link, button.dataset.vote);
+  if (button.hasAttribute('data-save')) toggleSaved(button.dataset.save);
+  if (button.hasAttribute('data-seen')) toggleSeen(button.dataset.seen);
+  if (button.hasAttribute('data-open')) markSeen(button.dataset.open);
+});
+document.querySelector('#startFlow').addEventListener('click', () => openFlow());
+document.querySelector('#closeFlow').addEventListener('click', () => document.querySelector('#flowDialog').close());
+document.querySelector('#flowNext').addEventListener('click', nextFlow);
+document.querySelector('#flowPrevious').addEventListener('click', previousFlow);
+document.querySelector('#flowDialog').addEventListener('close', () => {
+  document.body.classList.remove('flow-open');
+  document.querySelector('#flowContent').innerHTML = '';
+  startReadTracking();
+});
+document.querySelector('#flowDialog').addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowRight') { event.preventDefault(); nextFlow(); }
+  if (event.key === 'ArrowLeft') { event.preventDefault(); previousFlow(); }
+});
+let touchStart = null;
+document.querySelector('#flowContent').addEventListener('touchstart', (event) => {
+  touchStart = event.touches.length === 1 ? { x: event.touches[0].clientX, y: event.touches[0].clientY } : null;
+}, { passive: true });
+document.querySelector('#flowContent').addEventListener('touchend', (event) => {
+  if (!touchStart || !event.changedTouches.length) return;
+  const dx = event.changedTouches[0].clientX - touchStart.x;
+  const dy = event.changedTouches[0].clientY - touchStart.y;
+  touchStart = null;
+  if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.8) dx < 0 ? nextFlow() : previousFlow();
+}, { passive: true });
+document.querySelector('#flowContent').addEventListener('touchcancel', () => { touchStart = null; });
 renderHeader(); refresh();

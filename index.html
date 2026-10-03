@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/flow.css" />
     <script>
       (() => {
         const savedTheme = localStorage.getItem('interessefeed:theme');
@@ -34,7 +35,7 @@
         <div class="sidebar-note">
           <div class="note-icon">✳</div>
           <strong>Dit tempo. Dit valg.</strong>
-          <p>Din læse- og vurderingshistorik gemmes her, så vi senere kan tilpasse dit nyhedsudvalg.</p>
+          <p>Dine likes former dit mix. Swipe gennem nyhederne, eller bliv lidt længere ved det, der fanger dig.</p>
         </div>
         <div class="sidebar-footer"><span class="status-dot"></span> Samler åbne nyhedskilder <span class="footer-info" title="Artikler åbnes hos deres udgivere">ⓘ</span></div>
       </aside>
@@ -47,12 +48,14 @@
         </header>
 
         <section class="welcome">
-          <div class="welcome-copy"><div class="eyebrow" id="dateLine">DIT PERSONLIGE NYHEDSOVERBLIK</div><h1 id="pageTitle">Gør plads til<br /><em>det, du følger.</em></h1><p id="pageDescription">Nyt fra dine interesser, samlet ét sted. I rækkefølge efter tid — så du selv bestemmer, hvad der er vigtigt.</p></div>
-          <div class="welcome-art" aria-hidden="true"><div class="art-circle circle-one"></div><div class="art-circle circle-two"></div><div class="art-circle circle-three"></div><div class="art-sun"></div><div class="art-caption">MERE NYT,<br />MINDRE STØJ</div><div class="art-line"></div></div>
+          <div class="welcome-copy"><div class="eyebrow" id="dateLine"></div><h1 id="pageTitle">Følg din<br /><em>nysgerrighed.</em></h1><p id="pageDescription">Dine interesser. Nye perspektiver. Én god historie ad gangen.</p>
+          <div class="welcome-actions"><button class="flow-start" id="startFlow" disabled>Start dit flow <span aria-hidden="true">↗</span></button><span id="flowAvailability">Finder dine historier …</span></div></div>
+          <div class="welcome-art" aria-hidden="true"><span class="orbit-word">DINE INTERESSER I BEVÆGELSE</span><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit-core">m<span>.</span></div><span class="orbit-tag tag-one">⚽ Fodbold</span><span class="orbit-tag tag-two">⌘ Tech & AI</span><span class="orbit-tag tag-three">▻ Film & serier</span></div>
         </section>
+        <section class="entry-section hidden" id="entrySection" aria-label="Historier at starte med"><div class="entry-heading"><h2>Hvad fanger dig?</h2><span>Vælg en historie og hop ind</span></div><div class="entry-rail" id="entryRail"></div></section>
 
         <section class="feed-heading">
-          <div><div class="feed-kicker"><span class="live-indicator"></span> LØBENDE OVERBLIK</div><h2 id="sectionTitle">Seneste historier</h2></div>
+          <div><div class="feed-kicker"><span class="live-indicator"></span> DIT PERSONLIGE MIX</div><h2 id="sectionTitle">Seneste historier</h2></div>
           <div class="feed-tools"><label for="readFilter">Vis</label><select id="readFilter" aria-label="Filtrér efter læsestatus" title="Markeres automatisk som læst, når en historie er synlig på skærmen i 10 sekunder."><option value="all">Alle historier</option><option value="unread">Ulæste</option><option value="read">Læste</option></select><label class="sort-label" for="sortSelect">Sortér</label><select id="sortSelect"><option value="for-you">Til dig</option><option value="newest">Seneste</option><option value="biggest-unseen">Ulæste først</option><option value="oldest">Ældste først</option></select></div>
         </section>
 
@@ -72,6 +75,14 @@
         <input id="topicName" name="topicName" maxlength="60" autocomplete="off" placeholder="Fx Formel 1, København eller klima" required />
         <div class="form-actions"><button class="cancel-button" value="cancel">Annuller</button><button class="submit-topic" value="default">Følg emne</button></div>
       </form>
+    </dialog>
+    <dialog class="flow-dialog" id="flowDialog" aria-labelledby="flowTitle">
+      <header class="flow-top"><div><span class="flow-eyebrow">MELLEMRUM / LÆSEFLOW</span><h2 id="flowTitle">Dit personlige mix</h2></div><button id="closeFlow" class="flow-close" aria-label="Luk læseflow">×</button></header>
+      <div class="flow-progress" id="flowProgress" role="progressbar" aria-label="Placering i læseflow" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0"></div>
+      <div class="flow-content" id="flowContent" tabindex="0" aria-label="Nyhed"></div>
+      <footer class="flow-controls"><button id="flowPrevious" class="flow-previous" aria-label="Forrige historie">←</button><div class="flow-next-preview"><span id="flowPosition"></span><strong id="flowNextTitle"></strong></div><button id="flowNext" class="flow-next">Næste <span aria-hidden="true">→</span></button></footer>
+      <div class="toast flow-toast" id="flowToast" role="status"></div>
+      <div class="flow-hint">Swipe til siden eller brug ← → · Læst efter 10 sekunder</div>
     </dialog>
     <div class="toast" id="toast" role="status"></div>
     <script src="/app.js" defer></script>
