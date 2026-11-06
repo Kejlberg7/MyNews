@@ -9,5 +9,11 @@
     "api/ingest.mjs": {
       "maxDuration": 240
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/stopped.html"
+    }
+  ]
 }
