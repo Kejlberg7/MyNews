@@ -10,10 +10,21 @@
       "maxDuration": 240
     }
   },
-  "rewrites": [
+  "redirects": [
     {
-      "source": "/(.*)",
-      "destination": "/stopped.html"
+      "source": "/",
+      "destination": "/stopped.html",
+      "permanent": false
+    },
+    {
+      "source": "/index.html",
+      "destination": "/stopped.html",
+      "permanent": false
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/stopped.html",
+      "permanent": false
     }
   ]
 }
